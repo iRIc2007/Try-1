@@ -295,6 +295,59 @@ _CAT_COLORS = {
     "MARKETS":      ("#94a3b8", "rgba(148,163,184,0.15)"),
 }
 
+_SNAPSHOT_EMOJIS = [
+    ("⚠️",  ["⚠", "risk elevated", "spike", "fear", "volatility expansion"]),
+    ("🛢️", ["oil", "crude", "wti", "brent", "barrel"]),
+    ("₿",  ["bitcoin", "btc", "crypto"]),
+    ("💵", ["dollar", "dxy", "usd index"]),
+    ("🏦", ["rate ", "fed ", "treasury", "yield", "central bank"]),
+    ("💊", ["pharma", "drug", "fda", "lilly", "pfizer"]),
+    ("🏭", ["manufacturing", "industrial", "pmi"]),
+    ("🥇", ["gold"]),
+    ("📉", ["down ", "decline", "drop", "fell ", "slips", "slump"]),
+    ("📈", ["up ", "rally", "surge", "jump", "gain", "rise", "record"]),
+    ("😌", ["subdued", "calm", "markets calm"]),
+]
+
+def enrich_summary(bullets: list[str]) -> list[str]:
+    """Prepend a contextual emoji to each summary bullet."""
+    out = []
+    for b in bullets:
+        low = b.lower()
+        emoji = ""
+        for em, keywords in _SNAPSHOT_EMOJIS:
+            if any(kw in low for kw in keywords):
+                emoji = em
+                break
+        out.append(f"{emoji} {b}" if emoji else b)
+    return out
+
+
+def compute_radar(watchlist: dict) -> list[dict]:
+    """Identify stocks that need attention: big movers or unusual volume."""
+    flags = []
+    for sector, stocks in watchlist.items():
+        for s in stocks:
+            reasons = []
+            if abs(s["change_pct"]) >= 2.5:
+                reasons.append(f"{'▲' if s['change_pct'] > 0 else '▼'} {s['change_pct']:+.2f}% today")
+            if s.get("vol_ratio", 0) >= 1.8:
+                reasons.append(f"{s['vol_ratio']:.1f}× avg volume")
+            if s.get("range_pct", 50) >= 95:
+                reasons.append("Near 52-wk high")
+            elif s.get("range_pct", 50) <= 5:
+                reasons.append("Near 52-wk low")
+            if reasons:
+                color = "#00c853" if s["change_pct"] > 0 else ("#ff3d3d" if s["change_pct"] < 0 else "#f59e0b")
+                flags.append({
+                    "ticker": s["ticker"], "sector": sector,
+                    "price": s["price"], "change_pct": s["change_pct"],
+                    "reasons": reasons, "color": color,
+                })
+    flags.sort(key=lambda x: abs(x["change_pct"]), reverse=True)
+    return flags[:8]
+
+
 def enrich_news(news: list) -> list:
     """Add source badge and category tag to each news item."""
     out = []
@@ -402,7 +455,8 @@ HTML_TEMPLATE = Template("""\
         {% set tc  = '#00c853' if 'Bull' in i.trend  else ('#ff3d3d' if 'Bear' in i.trend  else '#94a3b8') %}
         {% set tb  = 'rgba(0,200,83,0.12)' if 'Bull' in i.trend else ('rgba(255,61,61,0.12)' if 'Bear' in i.trend else 'rgba(148,163,184,0.12)') %}
         {% set td_b = S_TD if not loop.last else S_TD_END %}
-        <tr>
+        {% set zebra = '#111d33' if loop.index is odd else 'transparent' %}
+        <tr style="background:{{ zebra }};">
           <td style="{{ td_b }}"><strong style="color:#ffffff;">{{ i.name }}</strong></td>
           <td style="{{ td_b }}">{{ "{:,.2f}".format(i.price) }}</td>
           <td style="{{ td_b }}color:{{ dc }};font-weight:700;">{{ "{:+.2f}".format(i.change_pct) }}%</td>
@@ -440,7 +494,7 @@ HTML_TEMPLATE = Template("""\
 
     {% for sector, stocks in watchlist.items() %}
     {% if stocks %}
-    <div style="font-size:12px;font-weight:700;color:#4fc3f7;margin:{% if loop.first %}0{% else %}20px{% endif %} 0 8px 0;padding:6px 10px;background:rgba(79,195,247,0.06);border-left:3px solid #4fc3f7;border-radius:0 4px 4px 0;letter-spacing:0.5px;text-transform:uppercase;">{{ sector }}</div>
+    <div style="font-size:15px;font-weight:800;color:#4fc3f7;margin:{% if loop.first %}0{% else %}24px{% endif %} 0 10px 0;padding:8px 12px 10px;background:rgba(79,195,247,0.06);border-left:3px solid #4fc3f7;border-bottom:2px solid #4fc3f7;border-radius:0 4px 0 0;letter-spacing:0.6px;text-transform:uppercase;">{{ sector }}</div>
     <table style="width:100%;border-collapse:collapse;font-size:13px;margin-bottom:4px;">
       <thead>
         <tr>
@@ -458,7 +512,8 @@ HTML_TEMPLATE = Template("""\
         {% set wc     = '#00c853' if s.weekly_change > 0 else ('#ff3d3d' if s.weekly_change < 0 else '#94a3b8') %}
         {% set dc_bg  = 'rgba(0,200,83,0.15)'  if s.change_pct > 0   else ('rgba(255,61,61,0.15)'  if s.change_pct < 0   else 'rgba(148,163,184,0.06)') %}
         {% set wc_bg  = 'rgba(0,200,83,0.15)'  if s.weekly_change > 0 else ('rgba(255,61,61,0.15)'  if s.weekly_change < 0 else 'rgba(148,163,184,0.06)') %}
-        {% set row_bg = 'rgba(0,200,83,0.08)'  if s.change_pct > 2   else ('rgba(255,61,61,0.08)'  if s.change_pct < -2   else 'transparent') %}
+        {% set base_bg = '#111d33' if loop.index is odd else 'transparent' %}
+        {% set row_bg = 'rgba(0,200,83,0.08)'  if s.change_pct > 2   else ('rgba(255,61,61,0.08)'  if s.change_pct < -2   else base_bg) %}
         {% set d_arrow = '▲' if s.change_pct > 0   else ('▼' if s.change_pct < 0   else '') %}
         {% set w_arrow = '▲' if s.weekly_change > 0 else ('▼' if s.weekly_change < 0 else '') %}
         {% set vol_c  = '#f59e0b' if s.vol_ratio > 1.5 else '#94a3b8' %}
@@ -542,9 +597,33 @@ HTML_TEMPLATE = Template("""\
     {% endfor %}
   </div>
 
+  {# ══ RADAR — flagged stocks ══ #}
+  {% if radar %}
+  <div style="{{ S_CARD }}">
+    <h2 style="{{ S_H2 }}">🔔 Radar — Stocks to Watch</h2>
+    {% for r in radar %}
+    {% set row_bg = '#111d33' if loop.index is odd else 'transparent' %}
+    <div style="padding:12px 14px;margin-bottom:6px;border-radius:8px;background:{{ row_bg }};border-left:4px solid {{ r.color }};">
+      <span style="font-size:17px;font-weight:900;color:#ffffff;letter-spacing:0.5px;">{{ r.ticker }}</span>
+      <span style="font-size:13px;color:#64748b;margin-left:8px;">{{ r.sector }}</span>
+      <span style="font-size:14px;font-weight:800;color:{{ r.color }};margin-left:12px;">{{ "{:+.2f}".format(r.change_pct) }}%</span>
+      <span style="font-size:13px;color:#ffffff;margin-left:4px;">${{ "{:,.2f}".format(r.price) }}</span>
+      <div style="margin-top:4px;">
+        {% for reason in r.reasons %}
+        <span style="display:inline-block;padding:2px 8px;border-radius:4px;font-size:10px;font-weight:700;color:{{ r.color }};background:{{ r.color }}22;margin-right:6px;margin-top:2px;">{{ reason }}</span>
+        {% endfor %}
+      </div>
+    </div>
+    {% endfor %}
+  </div>
+  {% endif %}
+
   {# ══ FOOTER ══ #}
-  <div style="text-align:center;font-size:12px;color:#4a5568;padding:16px 0 8px 0;border-top:1px solid #1e2d45;">
-    Market Brief Generator &nbsp;&middot;&nbsp; Data: Yahoo Finance &nbsp;&middot;&nbsp; News: RSS Feeds &nbsp;&middot;&nbsp; {{ date }} at {{ time }}
+  <div style="text-align:center;font-size:12px;color:#4a5568;padding:20px 16px 10px;border-top:1px solid #1e2d45;line-height:1.8;">
+    <div style="margin-bottom:6px;color:#64748b;font-weight:600;">Market Brief Generator</div>
+    <div>Data: <span style="color:#94a3b8;">Yahoo Finance API</span> &nbsp;&middot;&nbsp; News: <span style="color:#94a3b8;">CNBC, Reuters, MarketWatch, Yahoo Finance RSS</span></div>
+    <div>Generated: <span style="color:#94a3b8;">{{ date }} at {{ time }}</span></div>
+    <div style="margin-top:6px;color:#4fc3f7;font-weight:600;">Next brief tomorrow at 7:00 AM Milan time</div>
   </div>
 
 </div>
@@ -741,6 +820,8 @@ def generate_report():
     heatmap       = compute_heatmap(watchlist)
     market_status = get_market_status()
     news          = enrich_news(news)
+    summary       = enrich_summary(summary)
+    radar         = compute_radar(watchlist)
 
     # Render HTML
     print("Rendering HTML report...")
@@ -754,6 +835,7 @@ def generate_report():
         news=news,
         heatmap=heatmap,
         market_status=market_status,
+        radar=radar,
     )
 
     # Save to reports/ folder
