@@ -220,137 +220,81 @@ HTML_TEMPLATE = Template("""\
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Market Brief — {{ date }}</title>
-<style>
-  :root {
-    --green: #16a34a; --green-bg: #f0fdf4;
-    --red: #dc2626;   --red-bg: #fef2f2;
-    --gray: #6b7280;  --gray-bg: #f9fafb;
-    --border: #e5e7eb;
-  }
-  * { margin: 0; padding: 0; box-sizing: border-box; }
-  body {
-    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
-    background: #f3f4f6; color: #111827; line-height: 1.5;
-  }
-  .container { max-width: 960px; margin: 0 auto; padding: 24px 16px; }
-  .header {
-    background: linear-gradient(135deg, #1e3a5f 0%, #0f172a 100%);
-    color: white; padding: 32px; border-radius: 12px; margin-bottom: 24px;
-    text-align: center;
-  }
-  .header h1 { font-size: 28px; font-weight: 700; margin-bottom: 4px; }
-  .header .date { opacity: 0.8; font-size: 14px; }
-  .card {
-    background: white; border-radius: 10px; padding: 24px;
-    margin-bottom: 20px; box-shadow: 0 1px 3px rgba(0,0,0,0.08);
-  }
-  .card h2 {
-    font-size: 18px; font-weight: 700; margin-bottom: 16px;
-    padding-bottom: 8px; border-bottom: 2px solid var(--border);
-  }
-  .summary-list { list-style: none; padding: 0; }
-  .summary-list li {
-    padding: 10px 14px; margin-bottom: 8px; border-radius: 8px;
-    background: #eef2ff; border-left: 4px solid #4f46e5;
-    font-size: 14px; line-height: 1.6;
-  }
-  table { width: 100%; border-collapse: collapse; font-size: 13px; }
-  th {
-    text-align: left; padding: 10px 12px; background: var(--gray-bg);
-    font-weight: 600; font-size: 11px; text-transform: uppercase;
-    letter-spacing: 0.5px; color: var(--gray); border-bottom: 2px solid var(--border);
-  }
-  td { padding: 10px 12px; border-bottom: 1px solid var(--border); }
-  tr:hover { background: #fafafa; }
-  .pos { color: var(--green); font-weight: 600; }
-  .neg { color: var(--red); font-weight: 600; }
-  .neutral { color: var(--gray); }
-  .tag {
-    display: inline-block; padding: 2px 8px; border-radius: 4px;
-    font-size: 11px; font-weight: 600;
-  }
-  .tag-green { background: var(--green-bg); color: var(--green); }
-  .tag-red   { background: var(--red-bg); color: var(--red); }
-  .tag-gray  { background: var(--gray-bg); color: var(--gray); }
-  .range-bar {
-    width: 100%; height: 6px; background: #e5e7eb; border-radius: 3px;
-    position: relative; margin-top: 4px;
-  }
-  .range-fill {
-    height: 100%; border-radius: 3px; background: linear-gradient(90deg, var(--red), #eab308, var(--green));
-  }
-  .range-dot {
-    width: 10px; height: 10px; background: #111827; border: 2px solid white;
-    border-radius: 50%; position: absolute; top: -2px;
-    box-shadow: 0 1px 3px rgba(0,0,0,0.3);
-  }
-  .sector-label {
-    font-size: 14px; font-weight: 700; color: #4f46e5;
-    margin: 20px 0 8px 0; padding: 6px 0;
-    border-bottom: 1px dashed #c7d2fe;
-  }
-  .sector-label:first-of-type { margin-top: 0; }
-  .news-item {
-    padding: 10px 0; border-bottom: 1px solid var(--border);
-    display: flex; justify-content: space-between; gap: 12px;
-  }
-  .news-item:last-child { border-bottom: none; }
-  .news-item a {
-    color: #111827; text-decoration: none; font-size: 14px; font-weight: 500;
-  }
-  .news-item a:hover { color: #4f46e5; }
-  .news-source { font-size: 11px; color: var(--gray); white-space: nowrap; }
-  .footer {
-    text-align: center; font-size: 12px; color: var(--gray);
-    margin-top: 32px; padding-top: 16px; border-top: 1px solid var(--border);
-  }
-  .vol-high { color: #b45309; font-weight: 600; }
-  @media (max-width: 640px) {
-    .container { padding: 12px 8px; }
-    .card { padding: 16px; }
-    table { font-size: 12px; }
-    th, td { padding: 8px 6px; }
-  }
-</style>
 </head>
-<body>
-<div class="container">
 
-  <!-- HEADER -->
-  <div class="header">
-    <h1>Daily Market Brief</h1>
-    <div class="date">{{ date }} &middot; Generated at {{ time }}</div>
+{# ── Colour helpers ── #}
+{% set sp = indices | selectattr("name","equalto","S&P 500") | list %}
+{% set sp_up = sp and sp[0].change_pct > 0 %}
+{% set bar_color = '#00c853' if sp_up else '#ff3d3d' %}
+
+{# ── Shared inline-style strings ── #}
+{% set S_BODY   = "margin:0;padding:0;background:#0a0f1e;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;color:#e2e8f0;line-height:1.5;" %}
+{% set S_WRAP   = "max-width:960px;margin:0 auto;padding:24px 16px;" %}
+{% set S_CARD   = "background:#0d1526;border:1px solid #1e2d45;border-radius:10px;padding:24px;margin-bottom:20px;" %}
+{% set S_H2     = "font-size:18px;font-weight:700;color:#4fc3f7;margin:0 0 16px 0;padding-bottom:8px;border-bottom:2px solid #1e2d45;" %}
+{% set S_TH     = "text-align:left;padding:9px 12px;background:#111d33;font-weight:600;font-size:11px;text-transform:uppercase;letter-spacing:0.5px;color:#4fc3f7;border-bottom:2px solid #1e2d45;" %}
+{% set S_TD     = "padding:9px 12px;border-bottom:1px solid #1e2d45;color:#e2e8f0;" %}
+{% set S_TD_END = "padding:9px 12px;color:#e2e8f0;" %}
+
+<body style="{{ S_BODY }}">
+<div style="{{ S_WRAP }}">
+
+  {# ══ TOP STATUS BAR (green if S&P up, red if down) ══ #}
+  <div style="height:4px;background:{{ bar_color }};border-radius:2px 2px 0 0;"></div>
+
+  {# ══ HEADER ══ #}
+  <div style="background:linear-gradient(135deg,#0d2137 0%,#0a0f1e 100%);border:1px solid #1e3a5f;border-top:none;padding:28px 32px;margin-bottom:20px;border-radius:0 0 12px 12px;text-align:center;">
+    <div style="font-size:11px;font-weight:700;letter-spacing:2px;text-transform:uppercase;color:#4fc3f7;margin-bottom:8px;">DAILY MARKET BRIEF</div>
+    <div style="font-size:26px;font-weight:700;color:#ffffff;margin-bottom:6px;">{{ date }}</div>
+    <div style="font-size:13px;color:#64748b;">Generated at {{ time }}</div>
   </div>
 
-  <!-- EXECUTIVE SUMMARY -->
-  <div class="card">
-    <h2>Today's Snapshot</h2>
-    <ul class="summary-list">
-      {% for bullet in summary %}
-      <li>{{ bullet }}</li>
-      {% endfor %}
-    </ul>
+  {# ══ TODAY'S SNAPSHOT ══ #}
+  <div style="{{ S_CARD }}">
+    <h2 style="{{ S_H2 }}">Today's Snapshot</h2>
+    {% for bullet in summary %}
+    {% if '⚠' in bullet or 'elevated' in bullet or 'spike' in bullet.lower() %}
+      {% set b_border = '#ff3d3d' %}{% set b_bg = 'rgba(255,61,61,0.07)' %}
+    {% elif 'subdued' in bullet.lower() or 'calm' in bullet.lower() %}
+      {% set b_border = '#4fc3f7' %}{% set b_bg = 'rgba(79,195,247,0.07)' %}
+    {% elif ' up ' in bullet.lower() or ' +' in bullet %}
+      {% set b_border = '#00c853' %}{% set b_bg = 'rgba(0,200,83,0.07)' %}
+    {% elif ' down ' in bullet.lower() %}
+      {% set b_border = '#ff3d3d' %}{% set b_bg = 'rgba(255,61,61,0.07)' %}
+    {% else %}
+      {% set b_border = '#4fc3f7' %}{% set b_bg = 'rgba(79,195,247,0.07)' %}
+    {% endif %}
+    <div style="padding:11px 14px;margin-bottom:8px;border-radius:8px;background:{{ b_bg }};border-left:4px solid {{ b_border }};font-size:14px;line-height:1.65;color:#e2e8f0;">{{ bullet }}</div>
+    {% endfor %}
   </div>
 
-  <!-- MARKET OVERVIEW -->
-  <div class="card">
-    <h2>Market Overview</h2>
-    <table>
+  {# ══ MARKET OVERVIEW ══ #}
+  <div style="{{ S_CARD }}">
+    <h2 style="{{ S_H2 }}">Market Overview</h2>
+    <table style="width:100%;border-collapse:collapse;font-size:13px;">
       <thead>
-        <tr><th>Index</th><th>Price</th><th>Daily Chg</th><th>Trend</th></tr>
+        <tr>
+          <th style="{{ S_TH }}">Index</th>
+          <th style="{{ S_TH }}">Price</th>
+          <th style="{{ S_TH }}">Daily Chg</th>
+          <th style="{{ S_TH }}">Weekly Chg</th>
+          <th style="{{ S_TH }}">Trend</th>
+        </tr>
       </thead>
       <tbody>
         {% for i in indices %}
+        {% set dc  = '#00c853' if i.change_pct > 0   else ('#ff3d3d' if i.change_pct < 0   else '#94a3b8') %}
+        {% set wc  = '#00c853' if i.weekly_change > 0 else ('#ff3d3d' if i.weekly_change < 0 else '#94a3b8') %}
+        {% set tc  = '#00c853' if 'Bull' in i.trend  else ('#ff3d3d' if 'Bear' in i.trend  else '#94a3b8') %}
+        {% set tb  = 'rgba(0,200,83,0.12)' if 'Bull' in i.trend else ('rgba(255,61,61,0.12)' if 'Bear' in i.trend else 'rgba(148,163,184,0.12)') %}
+        {% set td_b = S_TD if not loop.last else S_TD_END %}
         <tr>
-          <td><strong>{{ i.name }}</strong></td>
-          <td>{{ "{:,.2f}".format(i.price) }}</td>
-          <td class="{{ 'pos' if i.change_pct > 0 else ('neg' if i.change_pct < 0 else 'neutral') }}">
-            {{ "{:+.2f}".format(i.change_pct) }}%
-          </td>
-          <td>
-            <span class="tag {{ 'tag-green' if 'Bull' in i.trend else ('tag-red' if 'Bear' in i.trend else 'tag-gray') }}">
-              {{ i.trend }}
-            </span>
+          <td style="{{ td_b }}"><strong style="color:#ffffff;">{{ i.name }}</strong></td>
+          <td style="{{ td_b }}">{{ "{:,.2f}".format(i.price) }}</td>
+          <td style="{{ td_b }}color:{{ dc }};font-weight:700;">{{ "{:+.2f}".format(i.change_pct) }}%</td>
+          <td style="{{ td_b }}color:{{ wc }};font-weight:700;">{{ "{:+.2f}".format(i.weekly_change) }}%</td>
+          <td style="{{ td_b }}">
+            <span style="display:inline-block;padding:2px 9px;border-radius:4px;font-size:11px;font-weight:700;color:{{ tc }};background:{{ tb }};">{{ i.trend }}</span>
           </td>
         </tr>
         {% endfor %}
@@ -358,86 +302,102 @@ HTML_TEMPLATE = Template("""\
     </table>
   </div>
 
-  <!-- WATCHLIST BY SECTOR -->
-  <div class="card">
-    <h2>Watchlist — by Sector</h2>
+  {# ══ WATCHLIST BY SECTOR ══ #}
+  <div style="{{ S_CARD }}">
+    <h2 style="{{ S_H2 }}">Watchlist — by Sector</h2>
     {% for sector, stocks in watchlist.items() %}
-    <div class="sector-label">{{ sector }}</div>
-    <table>
+    {% if stocks %}
+    <div style="font-size:12px;font-weight:700;color:#4fc3f7;margin:{% if loop.first %}0{% else %}20px{% endif %} 0 8px 0;padding:6px 10px;background:rgba(79,195,247,0.06);border-left:3px solid #4fc3f7;border-radius:0 4px 4px 0;letter-spacing:0.5px;text-transform:uppercase;">{{ sector }}</div>
+    <table style="width:100%;border-collapse:collapse;font-size:13px;margin-bottom:4px;">
       <thead>
         <tr>
-          <th>Ticker</th><th>Price</th><th>Day</th><th>Week</th>
-          <th>Volume vs Avg</th><th>52-Week Range</th>
+          <th style="{{ S_TH }}">Ticker</th>
+          <th style="{{ S_TH }}">Price</th>
+          <th style="{{ S_TH }}">Day %</th>
+          <th style="{{ S_TH }}">Week %</th>
+          <th style="{{ S_TH }}">Vol vs Avg</th>
+          <th style="{{ S_TH }}">52-Wk Range</th>
         </tr>
       </thead>
       <tbody>
         {% for s in stocks %}
-        <tr>
-          <td><strong>{{ s.ticker }}</strong></td>
-          <td>{{ "{:,.2f}".format(s.price) }}</td>
-          <td class="{{ 'pos' if s.change_pct > 0 else ('neg' if s.change_pct < 0 else 'neutral') }}">
-            {{ "{:+.2f}".format(s.change_pct) }}%
-          </td>
-          <td class="{{ 'pos' if s.weekly_change > 0 else ('neg' if s.weekly_change < 0 else 'neutral') }}">
-            {{ "{:+.2f}".format(s.weekly_change) }}%
-          </td>
-          <td class="{{ 'vol-high' if s.vol_ratio > 1.5 else '' }}">
-            {{ "{:,.0f}".format(s.volume) }}
-            ({{ "{:.1f}x".format(s.vol_ratio) }})
-          </td>
-          <td style="min-width:120px;">
-            <div style="font-size:11px;color:#6b7280;">
-              {{ "{:,.0f}".format(s.low_52) }} — {{ "{:,.0f}".format(s.high_52) }}
+        {% set dc     = '#00c853' if s.change_pct > 0    else ('#ff3d3d' if s.change_pct < 0    else '#94a3b8') %}
+        {% set wc     = '#00c853' if s.weekly_change > 0  else ('#ff3d3d' if s.weekly_change < 0  else '#94a3b8') %}
+        {% set dc_bg  = 'rgba(0,200,83,0.10)' if s.change_pct > 0 else ('rgba(255,61,61,0.10)' if s.change_pct < 0 else 'rgba(148,163,184,0.08)') %}
+        {% set wc_bg  = 'rgba(0,200,83,0.10)' if s.weekly_change > 0 else ('rgba(255,61,61,0.10)' if s.weekly_change < 0 else 'rgba(148,163,184,0.08)') %}
+        {% set row_bg = 'rgba(0,200,83,0.05)' if s.change_pct > 2 else ('rgba(255,61,61,0.05)' if s.change_pct < -2 else 'transparent') %}
+        {% set vol_c  = '#f59e0b' if s.vol_ratio > 1.5 else '#94a3b8' %}
+        {% set td_b   = S_TD if not loop.last else S_TD_END %}
+        <tr style="background:{{ row_bg }};">
+          <td style="{{ td_b }}"><strong style="color:#ffffff;font-size:14px;letter-spacing:0.3px;">{{ s.ticker }}</strong></td>
+          <td style="{{ td_b }}">{{ "{:,.2f}".format(s.price) }}</td>
+          <td style="padding:9px 12px;{% if not loop.last %}border-bottom:1px solid #1e2d45;{% endif %}background:{{ dc_bg }};color:{{ dc }};font-weight:700;">{{ "{:+.2f}".format(s.change_pct) }}%</td>
+          <td style="padding:9px 12px;{% if not loop.last %}border-bottom:1px solid #1e2d45;{% endif %}background:{{ wc_bg }};color:{{ wc }};font-weight:700;">{{ "{:+.2f}".format(s.weekly_change) }}%</td>
+          <td style="{{ td_b }}color:{{ vol_c }};">{{ "{:,.0f}".format(s.volume) }} <span style="color:#64748b;">({{ "{:.1f}x".format(s.vol_ratio) }})</span></td>
+          <td style="{{ td_b }}min-width:130px;">
+            <div style="font-size:10px;color:#64748b;margin-bottom:3px;">{{ "{:,.0f}".format(s.low_52) }} — {{ "{:,.0f}".format(s.high_52) }} &nbsp;<span style="color:#94a3b8;">{{ s.range_pct | round(0) | int }}% of range</span></div>
+            <div style="width:100%;height:8px;background:#1a2540;border-radius:4px;overflow:hidden;">
+              <div style="width:100%;height:100%;background:linear-gradient(90deg,#ff3d3d 0%,#eab308 50%,#00c853 100%);border-radius:4px;"></div>
             </div>
-            <div class="range-bar">
-              <div class="range-fill" style="width:100%"></div>
-              <div class="range-dot" style="left:calc({{ s.range_pct|round(1) }}% - 5px)"></div>
-            </div>
+            <div style="width:{{ s.range_pct | round(1) }}%;height:2px;background:#4fc3f7;margin-top:1px;border-radius:1px;"></div>
           </td>
         </tr>
         {% endfor %}
       </tbody>
     </table>
+    {% endif %}
     {% endfor %}
   </div>
 
-  <!-- MACRO DASHBOARD -->
-  <div class="card">
-    <h2>Macro Dashboard</h2>
-    <table>
+  {# ══ MACRO DASHBOARD ══ #}
+  <div style="{{ S_CARD }}">
+    <h2 style="{{ S_H2 }}">Macro Dashboard</h2>
+    <table style="width:100%;border-collapse:collapse;font-size:13px;">
       <thead>
-        <tr><th>Asset</th><th>Price</th><th>Daily Chg</th><th>Weekly Chg</th></tr>
+        <tr>
+          <th style="{{ S_TH }}">Asset</th>
+          <th style="{{ S_TH }}">Price</th>
+          <th style="{{ S_TH }}">Daily Chg</th>
+          <th style="{{ S_TH }}">Weekly Chg</th>
+        </tr>
       </thead>
       <tbody>
         {% for m in macro %}
+        {% set dc    = '#00c853' if m.change_pct > 0    else ('#ff3d3d' if m.change_pct < 0    else '#94a3b8') %}
+        {% set wc    = '#00c853' if m.weekly_change > 0  else ('#ff3d3d' if m.weekly_change < 0  else '#94a3b8') %}
+        {% set dc_bg = 'rgba(0,200,83,0.10)' if m.change_pct > 0 else ('rgba(255,61,61,0.10)' if m.change_pct < 0 else 'rgba(148,163,184,0.08)') %}
+        {% set wc_bg = 'rgba(0,200,83,0.10)' if m.weekly_change > 0 else ('rgba(255,61,61,0.10)' if m.weekly_change < 0 else 'rgba(148,163,184,0.08)') %}
+        {% set td_b  = S_TD if not loop.last else S_TD_END %}
         <tr>
-          <td><strong>{{ m.name }}</strong></td>
-          <td>{{ "{:,.2f}".format(m.price) }}</td>
-          <td class="{{ 'pos' if m.change_pct > 0 else ('neg' if m.change_pct < 0 else 'neutral') }}">
-            {{ "{:+.2f}".format(m.change_pct) }}%
-          </td>
-          <td class="{{ 'pos' if m.weekly_change > 0 else ('neg' if m.weekly_change < 0 else 'neutral') }}">
-            {{ "{:+.2f}".format(m.weekly_change) }}%
-          </td>
+          <td style="{{ td_b }}"><strong style="color:#ffffff;">{{ m.name }}</strong></td>
+          <td style="{{ td_b }}">{{ "{:,.2f}".format(m.price) }}</td>
+          <td style="padding:9px 12px;{% if not loop.last %}border-bottom:1px solid #1e2d45;{% endif %}background:{{ dc_bg }};color:{{ dc }};font-weight:700;">{{ "{:+.2f}".format(m.change_pct) }}%</td>
+          <td style="padding:9px 12px;{% if not loop.last %}border-bottom:1px solid #1e2d45;{% endif %}background:{{ wc_bg }};color:{{ wc }};font-weight:700;">{{ "{:+.2f}".format(m.weekly_change) }}%</td>
         </tr>
         {% endfor %}
       </tbody>
     </table>
   </div>
 
-  <!-- NEWS HEADLINES -->
-  <div class="card">
-    <h2>Top Headlines</h2>
+  {# ══ TOP HEADLINES ══ #}
+  <div style="{{ S_CARD }}">
+    <h2 style="{{ S_H2 }}">Top Headlines</h2>
     {% for n in news %}
-    <div class="news-item">
-      <a href="{{ n.link }}" target="_blank">{{ n.title }}</a>
-      <span class="news-source">{{ n.source }}</span>
+    {% set row_bg = '#111d33' if loop.index is odd else 'transparent' %}
+    <div style="display:table;width:100%;padding:10px 12px;{% if not loop.last %}border-bottom:1px solid #1e2d45;{% endif %}background:{{ row_bg }};border-radius:4px;box-sizing:border-box;">
+      <div style="display:table-cell;width:100%;vertical-align:middle;">
+        <a href="{{ n.link }}" target="_blank" style="color:#e2e8f0;text-decoration:none;font-size:14px;font-weight:500;line-height:1.5;">{{ n.title }}</a>
+      </div>
+      <div style="display:table-cell;vertical-align:middle;padding-left:16px;white-space:nowrap;">
+        <span style="font-size:11px;color:#64748b;">{{ n.source }}</span>
+      </div>
     </div>
     {% endfor %}
   </div>
 
-  <div class="footer">
-    Market Brief Generator &middot; Data via Yahoo Finance &middot; News via RSS
+  {# ══ FOOTER ══ #}
+  <div style="text-align:center;font-size:12px;color:#4a5568;padding:16px 0 8px 0;border-top:1px solid #1e2d45;">
+    Market Brief Generator &nbsp;&middot;&nbsp; Data: Yahoo Finance &nbsp;&middot;&nbsp; News: RSS Feeds &nbsp;&middot;&nbsp; {{ date }} at {{ time }}
   </div>
 
 </div>
