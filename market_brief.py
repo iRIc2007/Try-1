@@ -151,20 +151,20 @@ def fetch_news() -> list[dict]:
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
-# 2. AUTO-GENERATED SUMMARY (top 3 movers + biggest macro move)
+# 2. AUTO-GENERATED SUMMARY (top 3 movers + biggest macro move + risk signal)
 # ═══════════════════════════════════════════════════════════════════════════════
 
-def generate_summary(watchlist, macro) -> list[str]:
-    """Build a simple summary: top 3 watchlist movers + biggest macro move."""
-    # Flatten all watchlist stocks and sort by absolute daily change
+def generate_summary(indices, watchlist, macro) -> list[str]:
+    """Build a simple summary from fetched data — no API needed."""
+    bullets = []
+
+    # ── Top 3 watchlist movers (by absolute daily change) ──
     all_stocks = []
     for sector, stocks in watchlist.items():
         for st in stocks:
             all_stocks.append((sector, st))
-
     all_stocks.sort(key=lambda x: abs(x[1]["change_pct"]), reverse=True)
 
-    bullets = []
     for sector, st in all_stocks[:3]:
         direction = "up" if st["change_pct"] > 0 else "down"
         bullets.append(
@@ -172,7 +172,7 @@ def generate_summary(watchlist, macro) -> list[str]:
             f"to ${st['price']:,.2f}."
         )
 
-    # Biggest macro move by absolute change
+    # ── Biggest macro move ──
     if macro:
         top_macro = max(macro, key=lambda m: abs(m["change_pct"]))
         direction = "up" if top_macro["change_pct"] > 0 else "down"
@@ -180,6 +180,31 @@ def generate_summary(watchlist, macro) -> list[str]:
             f"{top_macro['name']} {direction} {top_macro['change_pct']:+.2f}% "
             f"to ${top_macro['price']:,.2f} — biggest macro move of the day."
         )
+
+    # ── Key risk signal ──
+    idx_map = {i["name"]: i for i in indices}
+    vix = idx_map.get("VIX")
+    if vix:
+        if vix["price"] >= 25:
+            bullets.append(
+                f"⚠ Risk elevated — VIX at {vix['price']:.1f} ({vix['change_pct']:+.2f}%), "
+                f"signaling high market fear."
+            )
+        elif vix["price"] >= 20:
+            bullets.append(
+                f"⚠ Risk rising — VIX at {vix['price']:.1f} ({vix['change_pct']:+.2f}%), "
+                f"above the long-term average."
+            )
+        elif vix["change_pct"] > 10:
+            bullets.append(
+                f"⚠ VIX spiked {vix['change_pct']:+.1f}% to {vix['price']:.1f} — "
+                f"watch for volatility expansion."
+            )
+        else:
+            bullets.append(
+                f"Risk subdued — VIX at {vix['price']:.1f} ({vix['change_pct']:+.2f}%), "
+                f"markets calm."
+            )
 
     return bullets
 
@@ -572,7 +597,7 @@ def demo_news():
 
 
 def demo_summary():
-    return generate_summary(demo_watchlist(), demo_macro())
+    return generate_summary(demo_indices(), demo_watchlist(), demo_macro())
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
@@ -605,7 +630,7 @@ def generate_report():
         macro = fetch_macro()
         news = fetch_news()
         # Generate summary
-        summary = generate_summary(watchlist, macro)
+        summary = generate_summary(indices, watchlist, macro)
 
     # Render HTML
     print("Rendering HTML report...")

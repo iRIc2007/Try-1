@@ -1,0 +1,79 @@
+# ─────────────────────────────────────────────────────────────────────────────
+# Daily Market Brief — GitHub Actions Workflow
+# Runs every morning at 7:00 AM Milan time (6:00 AM UTC)
+# ─────────────────────────────────────────────────────────────────────────────
+
+name: Daily Market Brief
+
+on:
+  # ── Automatic schedule: every day at 6:00 AM UTC (= 7:00 AM Milan) ──
+  schedule:
+    - cron: "0 6 * * *"
+
+  # ── Manual trigger: click "Run workflow" in the Actions tab to test ──
+  workflow_dispatch:
+
+jobs:
+  generate-and-email:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    steps:
+      # ── 1. Check out the repo ──
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      # ── 2. Set up Python 3.11 ──
+      - name: Set up Python 3.11
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      # ── 3. Install dependencies ──
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+
+      # ── 4. Run market_brief.py with live data ──
+      - name: Generate market brief
+        id: generate
+        run: |
+          python market_brief.py
+          # Find today's report file
+          REPORT=$(ls -t reports/*.html | head -1)
+          echo "report_path=$REPORT" >> "$GITHUB_OUTPUT"
+          echo "✅ Report generated: $REPORT"
+
+      # ── 5. Email the HTML report (embedded in body, not attachment) ──
+      - name: Email report
+        if: success()
+        uses: dawidd6/action-send-mail@v3
+        with:
+          server_address: smtp.gmail.com
+          server_port: 587
+          username: ${{ secrets.GMAIL_USERNAME }}
+          password: ${{ secrets.GMAIL_APP_PASSWORD }}
+          subject: "📊 Daily Market Brief — ${{ github.event.repository.name }}"
+          to: riccardococchi46@gmail.com
+          from: ${{ secrets.GMAIL_USERNAME }}
+          html_body: file://${{ steps.generate.outputs.report_path }}
+          content_type: text/html
+
+      # ── 6. Failure alert — sends email if anything above broke ──
+      - name: Send failure alert
+        if: failure()
+        uses: dawidd6/action-send-mail@v3
+        with:
+          server_address: smtp.gmail.com
+          server_port: 587
+          username: ${{ secrets.GMAIL_USERNAME }}
+          password: ${{ secrets.GMAIL_APP_PASSWORD }}
+          subject: "❌ Market Brief FAILED — ${{ github.event.repository.name }}"
+          to: riccardococchi46@gmail.com
+          from: ${{ secrets.GMAIL_USERNAME }}
+          html_body: |
+            <h2>⚠️ Your Daily Market Brief failed to generate</h2>
+            <p><b>Time:</b> ${{ github.event.head_commit.timestamp || 'Manual run' }}</p>
+            <p><b>Run:</b> <a href="https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }}">
+            View logs on GitHub</a></p>
+            <p>Check the workflow logs for details on what went wrong.</p>
+          content_type: text/html
