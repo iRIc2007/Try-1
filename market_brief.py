@@ -210,7 +210,37 @@ def generate_summary(indices, watchlist, macro) -> list[str]:
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
-# 3. HTML REPORT TEMPLATE
+# 3. SECTOR HEATMAP HELPER
+# ═══════════════════════════════════════════════════════════════════════════════
+
+def compute_heatmap(watchlist: dict) -> list[dict]:
+    """Return sectors sorted best→worst with pre-computed tile colours."""
+    result = []
+    for sector, stocks in watchlist.items():
+        if not stocks:
+            continue
+        avg = sum(s["change_pct"] for s in stocks) / len(stocks)
+        if avg >= 1.5:
+            bg, fg = "#0a3320", "#00c853"
+        elif avg >= 0.5:
+            bg, fg = "#0d2a1c", "#4ade80"
+        elif avg > 0:
+            bg, fg = "#0d1f18", "#86efac"
+        elif avg <= -1.5:
+            bg, fg = "#330a0a", "#ff3d3d"
+        elif avg <= -0.5:
+            bg, fg = "#2a0d0d", "#f87171"
+        elif avg < 0:
+            bg, fg = "#1f0d0d", "#fca5a5"
+        else:
+            bg, fg = "#111d33", "#94a3b8"
+        result.append({"sector": sector, "avg": avg, "bg": bg, "fg": fg})
+    result.sort(key=lambda x: x["avg"], reverse=True)
+    return result
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# 4. HTML REPORT TEMPLATE
 # ═══════════════════════════════════════════════════════════════════════════════
 
 HTML_TEMPLATE = Template("""\
@@ -305,6 +335,25 @@ HTML_TEMPLATE = Template("""\
   {# ══ WATCHLIST BY SECTOR ══ #}
   <div style="{{ S_CARD }}">
     <h2 style="{{ S_H2 }}">Watchlist — by Sector</h2>
+
+    {# ── SECTOR HEATMAP ── #}
+    <table style="width:100%;border-collapse:separate;border-spacing:6px;margin-bottom:20px;">
+      {% for row in heatmap | batch(4, '') %}
+      <tr>
+        {% for tile in row %}
+        {% if tile %}
+        <td style="width:25%;background:{{ tile.bg }};border:1px solid {{ tile.fg }}33;border-radius:8px;padding:10px 8px;text-align:center;vertical-align:top;">
+          <div style="font-size:10px;font-weight:700;color:{{ tile.fg }}99;text-transform:uppercase;letter-spacing:0.6px;margin-bottom:4px;line-height:1.2;">{{ tile.sector }}</div>
+          <div style="font-size:17px;font-weight:800;color:{{ tile.fg }};letter-spacing:0.3px;">{{ '▲' if tile.avg > 0 else ('▼' if tile.avg < 0 else '—') }} {{ "{:+.2f}".format(tile.avg) }}%</div>
+        </td>
+        {% else %}
+        <td style="width:25%;"></td>
+        {% endif %}
+        {% endfor %}
+      </tr>
+      {% endfor %}
+    </table>
+
     {% for sector, stocks in watchlist.items() %}
     {% if stocks %}
     <div style="font-size:12px;font-weight:700;color:#4fc3f7;margin:{% if loop.first %}0{% else %}20px{% endif %} 0 8px 0;padding:6px 10px;background:rgba(79,195,247,0.06);border-left:3px solid #4fc3f7;border-radius:0 4px 4px 0;letter-spacing:0.5px;text-transform:uppercase;">{{ sector }}</div>
@@ -364,34 +413,32 @@ HTML_TEMPLATE = Template("""\
     {% endfor %}
   </div>
 
-  {# ══ MACRO DASHBOARD ══ #}
+  {# ══ MACRO DASHBOARD — 2×2 card grid ══ #}
   <div style="{{ S_CARD }}">
     <h2 style="{{ S_H2 }}">Macro Dashboard</h2>
-    <table style="width:100%;border-collapse:collapse;font-size:13px;">
-      <thead>
-        <tr>
-          <th style="{{ S_TH }}">Asset</th>
-          <th style="{{ S_TH }}">Price</th>
-          <th style="{{ S_TH }}">Daily Chg</th>
-          <th style="{{ S_TH }}">Weekly Chg</th>
-        </tr>
-      </thead>
-      <tbody>
-        {% for m in macro %}
-        {% set dc    = '#00c853' if m.change_pct > 0    else ('#ff3d3d' if m.change_pct < 0    else '#94a3b8') %}
-        {% set wc    = '#00c853' if m.weekly_change > 0  else ('#ff3d3d' if m.weekly_change < 0  else '#94a3b8') %}
-        {% set dc_bg = 'rgba(0,200,83,0.10)' if m.change_pct > 0 else ('rgba(255,61,61,0.10)' if m.change_pct < 0 else 'rgba(148,163,184,0.08)') %}
-        {% set wc_bg = 'rgba(0,200,83,0.10)' if m.weekly_change > 0 else ('rgba(255,61,61,0.10)' if m.weekly_change < 0 else 'rgba(148,163,184,0.08)') %}
-        {% set td_b  = S_TD if not loop.last else S_TD_END %}
-        <tr>
-          <td style="{{ td_b }}"><strong style="color:#ffffff;">{{ m.name }}</strong></td>
-          <td style="{{ td_b }}">{{ "{:,.2f}".format(m.price) }}</td>
-          <td style="padding:9px 12px;{% if not loop.last %}border-bottom:1px solid #1e2d45;{% endif %}background:{{ dc_bg }};color:{{ dc }};font-weight:700;">{{ "{:+.2f}".format(m.change_pct) }}%</td>
-          <td style="padding:9px 12px;{% if not loop.last %}border-bottom:1px solid #1e2d45;{% endif %}background:{{ wc_bg }};color:{{ wc }};font-weight:700;">{{ "{:+.2f}".format(m.weekly_change) }}%</td>
-        </tr>
+    {% for row in macro | batch(2) %}
+    <table style="width:100%;border-collapse:separate;border-spacing:12px;margin-bottom:{% if not loop.last %}0{% else %}0{% endif %};">
+      <tr>
+        {% for m in row %}
+        {% set dc      = '#00c853' if m.change_pct > 0    else ('#ff3d3d' if m.change_pct < 0    else '#94a3b8') %}
+        {% set wc      = '#00c853' if m.weekly_change > 0  else ('#ff3d3d' if m.weekly_change < 0  else '#94a3b8') %}
+        {% set card_bg = 'rgba(0,200,83,0.06)'  if m.change_pct > 0 else ('rgba(255,61,61,0.06)'  if m.change_pct < 0 else 'rgba(148,163,184,0.04)') %}
+        {% set bdr     = '#00c85344' if m.change_pct > 0  else ('#ff3d3d44' if m.change_pct < 0  else '#1e2d45') %}
+        {% set d_arrow = '▲' if m.change_pct > 0    else ('▼' if m.change_pct < 0    else '—') %}
+        {% set w_arrow = '▲' if m.weekly_change > 0  else ('▼' if m.weekly_change < 0  else '—') %}
+        <td style="width:50%;background:{{ card_bg }};border:1px solid {{ bdr }};border-radius:10px;padding:18px 20px;vertical-align:top;">
+          <div style="font-size:11px;font-weight:700;color:#64748b;text-transform:uppercase;letter-spacing:1px;margin-bottom:6px;">{{ m.name }}</div>
+          <div style="font-size:26px;font-weight:800;color:#ffffff;letter-spacing:0.5px;margin-bottom:10px;">{{ "{:,.2f}".format(m.price) }}</div>
+          <div style="font-size:20px;font-weight:800;color:{{ dc }};margin-bottom:6px;">{{ d_arrow }} {{ "{:+.2f}".format(m.change_pct) }}%</div>
+          <div style="font-size:12px;color:#64748b;">Week &nbsp;<span style="color:{{ wc }};font-weight:700;">{{ w_arrow }} {{ "{:+.2f}".format(m.weekly_change) }}%</span></div>
+        </td>
+        {% if loop.length == 1 %}
+        <td style="width:50%;"></td>
+        {% endif %}
         {% endfor %}
-      </tbody>
+      </tr>
     </table>
+    {% endfor %}
   </div>
 
   {# ══ TOP HEADLINES ══ #}
@@ -593,19 +640,20 @@ def generate_report():
 
     if DEMO_MODE:
         print("Using sample data (--demo mode)...")
-        indices = demo_indices()
+        indices  = demo_indices()
         watchlist = demo_watchlist()
-        macro = demo_macro()
-        news = demo_news()
-        summary = demo_summary()
+        macro    = demo_macro()
+        news     = demo_news()
+        summary  = demo_summary()
     else:
         # Fetch all data
-        indices = fetch_indices()
+        indices   = fetch_indices()
         watchlist = fetch_watchlist()
-        macro = fetch_macro()
-        news = fetch_news()
-        # Generate summary
-        summary = generate_summary(indices, watchlist, macro)
+        macro     = fetch_macro()
+        news      = fetch_news()
+        summary   = generate_summary(indices, watchlist, macro)
+
+    heatmap = compute_heatmap(watchlist)
 
     # Render HTML
     print("Rendering HTML report...")
@@ -617,6 +665,7 @@ def generate_report():
         watchlist=watchlist,
         macro=macro,
         news=news,
+        heatmap=heatmap,
     )
 
     # Save to reports/ folder
