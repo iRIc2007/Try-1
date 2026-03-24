@@ -234,6 +234,16 @@ def generate_summary(indices, watchlist, macro) -> list[str]:
                 f"markets calm."
             )
 
+    # ── Monday Weekly Outlook ──
+    now = datetime.now()
+    if now.weekday() == 0:  # Monday
+        bullets.append(
+            "📅 Weekly Outlook — Key events to watch this week: "
+            "Fed speakers & FOMC minutes, major earnings releases, "
+            "U.S. jobs data (ADP Wed / NFP Fri), PMI updates, "
+            "and any ECB or BoJ policy signals."
+        )
+
     return bullets
 
 
@@ -443,6 +453,14 @@ HTML_TEMPLATE = Template("""\
     </div>
   </div>
 
+  {# ══ VIX HIGH-VOLATILITY ALERT ══ #}
+  {% if vix_alert %}
+  <div style="background:rgba(255,61,61,0.12);border:2px solid #ff3d3d;border-radius:10px;padding:16px 24px;margin-bottom:20px;text-align:center;">
+    <span style="font-size:20px;font-weight:800;color:#ff3d3d;">⚠️ High Volatility Alert</span>
+    <span style="font-size:15px;color:#fca5a5;margin-left:10px;">— VIX at {{ vix_alert.price }} ({{ "{:+.2f}".format(vix_alert.change_pct) }}%)</span>
+  </div>
+  {% endif %}
+
   {# ══ TODAY'S SNAPSHOT ══ #}
   <div style="{{ S_CARD }}">
     <h2 style="{{ S_H2 }}">Today's Snapshot</h2>
@@ -548,7 +566,7 @@ HTML_TEMPLATE = Template("""\
         {# SVG range bar: 150×16, gradient track, white dot at range_pct position #}
         {% set dot_x  = (s.range_pct / 100 * 150) | round(1) %}
         <tr style="background:{{ row_bg }};">
-          <td style="{{ td_b }}"><strong style="color:#ffffff;font-size:15px;font-weight:800;letter-spacing:0.4px;">{{ s.ticker }}</strong></td>
+          <td style="{{ td_b }}"><strong style="color:#ffffff;font-size:15px;font-weight:800;letter-spacing:0.4px;">{% if s.change_pct > 5 or s.change_pct < -5 %}🔥 {% endif %}{{ s.ticker }}</strong></td>
           <td style="{{ td_b }}font-size:13px;">{{ "{:,.2f}".format(s.price) }}</td>
           <td style="padding:9px 12px;{% if not loop.last %}border-bottom:1px solid #1e2d45;{% endif %}background:{{ dc_bg }};color:{{ dc }};font-weight:800;font-size:13px;">{{ d_arrow }} {{ "{:+.2f}".format(s.change_pct) }}%</td>
           <td style="padding:9px 12px;{% if not loop.last %}border-bottom:1px solid #1e2d45;{% endif %}background:{{ wc_bg }};color:{{ wc }};font-weight:800;font-size:13px;">{{ w_arrow }} {{ "{:+.2f}".format(s.weekly_change) }}%</td>
@@ -850,6 +868,10 @@ def generate_report():
     summary       = enrich_summary(summary)
     radar         = compute_radar(watchlist)
 
+    # VIX alert: if VIX >= 25, show a prominent red banner
+    vix_data = next((i for i in indices if i["name"] == "VIX"), None)
+    vix_alert = vix_data if vix_data and vix_data["price"] >= 25 else None
+
     # Render HTML
     print("Rendering HTML report...")
     html = HTML_TEMPLATE.render(
@@ -863,6 +885,7 @@ def generate_report():
         heatmap=heatmap,
         market_status=market_status,
         radar=radar,
+        vix_alert=vix_alert,
     )
 
     # Save to reports/ folder
