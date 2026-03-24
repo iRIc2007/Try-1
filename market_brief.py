@@ -12,6 +12,7 @@ import sys
 import time
 from datetime import datetime, timedelta
 from pathlib import Path
+from zoneinfo import ZoneInfo
 
 import feedparser
 import yfinance as yf
@@ -239,6 +240,85 @@ def compute_heatmap(watchlist: dict) -> list[dict]:
     return result
 
 
+# ─── Market status ─────────────────────────────────────────────────────────────
+
+def get_market_status() -> dict:
+    """Return the current US equity market session label and colour."""
+    now_et = datetime.now(ZoneInfo("America/New_York"))
+    wd = now_et.weekday()           # 0 = Mon … 6 = Sun
+    t  = now_et.hour * 60 + now_et.minute  # minutes since midnight ET
+
+    if wd >= 5:
+        return {"label": "Market Closed", "color": "#94a3b8", "bg": "rgba(148,163,184,0.15)"}
+    if 4 * 60 <= t < 9 * 60 + 30:
+        return {"label": "Pre-Market",    "color": "#f59e0b", "bg": "rgba(245,158,11,0.15)"}
+    if 9 * 60 + 30 <= t < 16 * 60:
+        return {"label": "● Market Open", "color": "#00c853", "bg": "rgba(0,200,83,0.15)"}
+    if 16 * 60 <= t < 20 * 60:
+        return {"label": "After-Hours",   "color": "#f59e0b", "bg": "rgba(245,158,11,0.15)"}
+    return     {"label": "Market Closed", "color": "#94a3b8", "bg": "rgba(148,163,184,0.15)"}
+
+
+# ─── News enrichment ───────────────────────────────────────────────────────────
+
+_SOURCE_BADGES = {
+    "cnbc":        {"label": "CNBC",         "color": "#ff3d3d", "bg": "rgba(255,61,61,0.18)"},
+    "reuters":     {"label": "Reuters",       "color": "#f97316", "bg": "rgba(249,115,22,0.18)"},
+    "marketwatch": {"label": "MarketWatch",   "color": "#3b82f6", "bg": "rgba(59,130,246,0.18)"},
+    "yahoo":       {"label": "Yahoo Finance", "color": "#a855f7", "bg": "rgba(168,85,247,0.18)"},
+    "bloomberg":   {"label": "Bloomberg",     "color": "#4fc3f7", "bg": "rgba(79,195,247,0.18)"},
+    "ft":          {"label": "FT",            "color": "#f2a900", "bg": "rgba(242,169,0,0.18)"},
+    "wsj":         {"label": "WSJ",           "color": "#e2e8f0", "bg": "rgba(226,232,240,0.12)"},
+}
+
+_CATEGORIES = [
+    ("CRYPTO",      ["bitcoin","crypto","ethereum","blockchain","btc","eth","coin"]),
+    ("AI",          ["artificial intelligence"," ai ","openai","chatgpt","large language","llm","generative"]),
+    ("TECH",        ["nvidia","apple","microsoft","google","amazon","meta","chip","semiconductor","software","tech"]),
+    ("MACRO",       ["fed ","federal reserve","rate cut","rate hike","inflation","gdp","economy","treasury","yield","central bank","recession","dollar","monetary policy"]),
+    ("ENERGY",      ["oil","gas","crude","opec","pipeline","wti","brent","barrel","lng"]),
+    ("HEALTH",      ["fda","drug","vaccine","clinical trial","pharma","biotech","weight-loss","obesity"]),
+    ("GEOPOLITICAL",["china","russia","ukraine","war","sanction","trade war","tariff","nato","middle east"]),
+    ("EARNINGS",    ["earnings","revenue","profit","loss"," eps ","quarterly","guidance","beat","miss"]),
+    ("MARKETS",     ["s&p","nasdaq","dow jones","rally","selloff","bull market","bear market"]),
+]
+
+_CAT_COLORS = {
+    "CRYPTO":       ("#f59e0b", "rgba(245,158,11,0.15)"),
+    "AI":           ("#a855f7", "rgba(168,85,247,0.15)"),
+    "TECH":         ("#4fc3f7", "rgba(79,195,247,0.15)"),
+    "MACRO":        ("#3b82f6", "rgba(59,130,246,0.15)"),
+    "ENERGY":       ("#f97316", "rgba(249,115,22,0.15)"),
+    "HEALTH":       ("#10b981", "rgba(16,185,129,0.15)"),
+    "GEOPOLITICAL": ("#ff3d3d", "rgba(255,61,61,0.15)"),
+    "EARNINGS":     ("#00c853", "rgba(0,200,83,0.15)"),
+    "MARKETS":      ("#94a3b8", "rgba(148,163,184,0.15)"),
+}
+
+def enrich_news(news: list) -> list:
+    """Add source badge and category tag to each news item."""
+    out = []
+    for item in news:
+        src_lower = item["source"].lower()
+        badge = {"label": item["source"], "color": "#94a3b8", "bg": "rgba(148,163,184,0.12)"}
+        for key, b in _SOURCE_BADGES.items():
+            if key in src_lower:
+                badge = b
+                break
+
+        title_lower = item["title"].lower()
+        category, cat_color, cat_bg = "", "#64748b", "rgba(100,116,139,0.15)"
+        for cat, keywords in _CATEGORIES:
+            if any(kw in title_lower for kw in keywords):
+                category = cat
+                cat_color, cat_bg = _CAT_COLORS.get(cat, ("#64748b", "rgba(100,116,139,0.15)"))
+                break
+
+        out.append({**item, "badge": badge,
+                    "category": category, "cat_color": cat_color, "cat_bg": cat_bg})
+    return out
+
+
 # ═══════════════════════════════════════════════════════════════════════════════
 # 4. HTML REPORT TEMPLATE
 # ═══════════════════════════════════════════════════════════════════════════════
@@ -274,9 +354,13 @@ HTML_TEMPLATE = Template("""\
 
   {# ══ HEADER ══ #}
   <div style="background:linear-gradient(135deg,#0d2137 0%,#0a0f1e 100%);border:1px solid #1e3a5f;border-top:none;padding:28px 32px;margin-bottom:20px;border-radius:0 0 12px 12px;text-align:center;">
-    <div style="font-size:11px;font-weight:700;letter-spacing:2px;text-transform:uppercase;color:#4fc3f7;margin-bottom:8px;">DAILY MARKET BRIEF</div>
-    <div style="font-size:26px;font-weight:700;color:#ffffff;margin-bottom:6px;">{{ date }}</div>
-    <div style="font-size:13px;color:#64748b;">Generated at {{ time }}</div>
+    <div style="font-size:11px;font-weight:700;letter-spacing:2px;text-transform:uppercase;color:#4fc3f7;margin-bottom:10px;">DAILY MARKET BRIEF</div>
+    <div style="font-size:26px;font-weight:700;color:#ffffff;margin-bottom:8px;">{{ date }}</div>
+    <div style="margin-bottom:0;">
+      <span style="font-size:13px;color:#64748b;">Generated at {{ time }}</span>
+      &nbsp;&nbsp;
+      <span style="display:inline-block;padding:3px 10px;border-radius:20px;font-size:11px;font-weight:700;letter-spacing:0.5px;color:{{ market_status.color }};background:{{ market_status.bg }};border:1px solid {{ market_status.color }}44;">{{ market_status.label }}</span>
+    </div>
   </div>
 
   {# ══ TODAY'S SNAPSHOT ══ #}
@@ -446,13 +530,14 @@ HTML_TEMPLATE = Template("""\
     <h2 style="{{ S_H2 }}">Top Headlines</h2>
     {% for n in news %}
     {% set row_bg = '#111d33' if loop.index is odd else 'transparent' %}
-    <div style="display:table;width:100%;padding:10px 12px;{% if not loop.last %}border-bottom:1px solid #1e2d45;{% endif %}background:{{ row_bg }};border-radius:4px;box-sizing:border-box;">
-      <div style="display:table-cell;width:100%;vertical-align:middle;">
-        <a href="{{ n.link }}" target="_blank" style="color:#e2e8f0;text-decoration:none;font-size:14px;font-weight:500;line-height:1.5;">{{ n.title }}</a>
+    <div style="padding:11px 12px;{% if not loop.last %}border-bottom:1px solid #1e2d45;{% endif %}background:{{ row_bg }};border-radius:4px;">
+      <div style="margin-bottom:5px;">
+        <span style="display:inline-block;padding:2px 7px;border-radius:4px;font-size:10px;font-weight:700;letter-spacing:0.4px;color:{{ n.badge.color }};background:{{ n.badge.bg }};margin-right:6px;">{{ n.badge.label }}</span>
+        {% if n.category %}
+        <span style="display:inline-block;padding:2px 7px;border-radius:4px;font-size:10px;font-weight:700;letter-spacing:0.4px;color:{{ n.cat_color }};background:{{ n.cat_bg }};">[{{ n.category }}]</span>
+        {% endif %}
       </div>
-      <div style="display:table-cell;vertical-align:middle;padding-left:16px;white-space:nowrap;">
-        <span style="font-size:11px;color:#64748b;">{{ n.source }}</span>
-      </div>
+      <a href="{{ n.link }}" target="_blank" style="color:#e2e8f0;text-decoration:none;font-size:14px;font-weight:500;line-height:1.5;">{{ n.title }}</a>
     </div>
     {% endfor %}
   </div>
@@ -653,7 +738,9 @@ def generate_report():
         news      = fetch_news()
         summary   = generate_summary(indices, watchlist, macro)
 
-    heatmap = compute_heatmap(watchlist)
+    heatmap       = compute_heatmap(watchlist)
+    market_status = get_market_status()
+    news          = enrich_news(news)
 
     # Render HTML
     print("Rendering HTML report...")
@@ -666,6 +753,7 @@ def generate_report():
         macro=macro,
         news=news,
         heatmap=heatmap,
+        market_status=market_status,
     )
 
     # Save to reports/ folder
