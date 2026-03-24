@@ -3,11 +3,6 @@ Configuration for Market Brief Generator.
 Edit this file to customize your watchlist and settings.
 """
 
-# ─── Your Anthropic API Key ─────────────────────────────────────────────────
-# Get one free at: https://console.anthropic.com/settings/keys
-# Paste it between the quotes, or set the ANTHROPIC_API_KEY environment variable.
-ANTHROPIC_API_KEY = ""
-
 # ─── Watchlist by Sector ────────────────────────────────────────────────────
 # Each entry: ticker symbol → displayed in the report grouped by sector.
 # Edit freely — add/remove tickers as you like.

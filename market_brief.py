@@ -151,116 +151,37 @@ def fetch_news() -> list[dict]:
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
-# 2. AI EXECUTIVE SUMMARY
+# 2. AUTO-GENERATED SUMMARY (top 3 movers + biggest macro move)
 # ═══════════════════════════════════════════════════════════════════════════════
 
-def build_summary_prompt(indices, watchlist, macro, news) -> str:
-    """Build the prompt that asks Claude to write an executive summary."""
-    lines = ["Here is today's market data. Write exactly 5 concise bullet points "
-             "summarizing the key themes, notable movers, and what investors should "
-             "watch. Be specific with numbers. No preamble — just the 5 bullets.\n"]
-
-    lines.append("== INDICES ==")
-    for idx in indices:
-        lines.append(f"{idx['name']}: {idx['price']:.2f} ({idx['change_pct']:+.2f}%)")
-
-    lines.append("\n== TOP MOVERS BY SECTOR ==")
+def generate_summary(watchlist, macro) -> list[str]:
+    """Build a simple summary: top 3 watchlist movers + biggest macro move."""
+    # Flatten all watchlist stocks and sort by absolute daily change
+    all_stocks = []
     for sector, stocks in watchlist.items():
-        if stocks:
-            top = stocks[0]
-            bot = stocks[-1]
-            lines.append(f"{sector}: best {top['ticker']} {top['change_pct']:+.2f}%, "
-                         f"worst {bot['ticker']} {bot['change_pct']:+.2f}%")
+        for st in stocks:
+            all_stocks.append((sector, st))
 
-    lines.append("\n== MACRO ==")
-    for m in macro:
-        lines.append(f"{m['name']}: {m['price']:.2f} ({m['change_pct']:+.2f}%)")
+    all_stocks.sort(key=lambda x: abs(x[1]["change_pct"]), reverse=True)
 
-    lines.append("\n== TOP HEADLINES ==")
-    for n in news[:10]:
-        lines.append(f"- {n['title']}")
-
-    return "\n".join(lines)
-
-
-def generate_ai_summary(indices, watchlist, macro, news) -> list[str]:
-    """Call Claude API to produce 5 bullet-point executive summary."""
-    api_key = config.ANTHROPIC_API_KEY or os.environ.get("ANTHROPIC_API_KEY", "")
-
-    if not api_key:
-        print("  ℹ No ANTHROPIC_API_KEY found — using fallback summary.")
-        return generate_fallback_summary(indices, watchlist, macro)
-
-    try:
-        import anthropic
-        client = anthropic.Anthropic(api_key=api_key)
-        prompt = build_summary_prompt(indices, watchlist, macro, news)
-
-        print("Generating AI executive summary...")
-        message = client.messages.create(
-            model="claude-sonnet-4-20250514",
-            max_tokens=512,
-            messages=[{"role": "user", "content": prompt}],
-        )
-        text = message.content[0].text.strip()
-        # Parse bullets — look for lines starting with •, -, *, or numbered
-        bullets = []
-        for line in text.split("\n"):
-            line = line.strip()
-            if line and (line[0] in "•-*" or (len(line) > 1 and line[0].isdigit() and line[1] in ".)")):
-                # Strip the leading bullet character
-                cleaned = line.lstrip("•-*0123456789.) ").strip()
-                if cleaned:
-                    bullets.append(cleaned)
-        return bullets[:5] if bullets else [text[:300]]
-
-    except Exception as e:
-        print(f"  ⚠ AI summary failed: {e}  — using fallback.")
-        return generate_fallback_summary(indices, watchlist, macro)
-
-
-def generate_fallback_summary(indices, watchlist, macro) -> list[str]:
-    """Rule-based summary when no API key is available."""
     bullets = []
-
-    # Index summary
-    idx_map = {i["name"]: i for i in indices}
-    sp = idx_map.get("S&P 500")
-    if sp:
-        direction = "higher" if sp["change_pct"] > 0 else "lower"
+    for sector, st in all_stocks[:3]:
+        direction = "up" if st["change_pct"] > 0 else "down"
         bullets.append(
-            f"U.S. equities traded {direction} — S&P 500 at {sp['price']:,.0f} "
-            f"({sp['change_pct']:+.2f}%), NASDAQ {idx_map.get('NASDAQ', {}).get('change_pct', 0):+.2f}%."
+            f"{st['ticker']} ({sector}) {direction} {st['change_pct']:+.2f}% "
+            f"to ${st['price']:,.2f}."
         )
 
-    # VIX
-    vix = idx_map.get("VIX")
-    if vix:
-        level = "elevated" if vix["price"] > 20 else "subdued"
-        bullets.append(f"Volatility {level} with VIX at {vix['price']:.1f} ({vix['change_pct']:+.2f}%).")
+    # Biggest macro move by absolute change
+    if macro:
+        top_macro = max(macro, key=lambda m: abs(m["change_pct"]))
+        direction = "up" if top_macro["change_pct"] > 0 else "down"
+        bullets.append(
+            f"{top_macro['name']} {direction} {top_macro['change_pct']:+.2f}% "
+            f"to ${top_macro['price']:,.2f} — biggest macro move of the day."
+        )
 
-    # Biggest sector winner
-    best_stock = None
-    for sector, stocks in watchlist.items():
-        if stocks and (best_stock is None or stocks[0]["change_pct"] > best_stock[1]["change_pct"]):
-            best_stock = (sector, stocks[0])
-    if best_stock:
-        s, st = best_stock
-        bullets.append(f"Top mover: {st['ticker']} ({s}) surged {st['change_pct']:+.2f}% on the day.")
-
-    # Macro
-    for m in macro:
-        if "Gold" in m["name"] and abs(m["change_pct"]) > 0.5:
-            direction = "rallied" if m["change_pct"] > 0 else "declined"
-            bullets.append(f"Gold {direction} to ${m['price']:,.0f} ({m['change_pct']:+.2f}%).")
-            break
-
-    for m in macro:
-        if "Bitcoin" in m["name"]:
-            bullets.append(f"Bitcoin at ${m['price']:,.0f} ({m['change_pct']:+.2f}%).")
-            break
-
-    return bullets[:5]
+    return bullets
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
@@ -378,7 +299,7 @@ HTML_TEMPLATE = Template("""\
 
   <!-- EXECUTIVE SUMMARY -->
   <div class="card">
-    <h2>Executive Summary</h2>
+    <h2>Today's Snapshot</h2>
     <ul class="summary-list">
       {% for bullet in summary %}
       <li>{{ bullet }}</li>
@@ -651,18 +572,7 @@ def demo_news():
 
 
 def demo_summary():
-    return [
-        "U.S. equities rallied broadly — S&P 500 gained +0.87% to 5,842 and NASDAQ surged +1.24%, "
-        "led by mega-cap tech and semiconductors hitting near-record highs.",
-        "NVIDIA led the market higher (+3.45%) on strong AI chip demand signals, with the broader "
-        "semiconductor sector (AVGO +2.8%, AMD +2.15%) confirming sustained AI infrastructure spending.",
-        "Gold broke above $3,028 (+0.92%) to a new all-time high as central banks accelerate reserve "
-        "diversification and the DXY weakened -0.35%, while crude oil slipped below $69 on demand concerns.",
-        "Defensive rotation evident in utilities (NEE +0.90%) and healthcare (LLY +1.90%) outperforming "
-        "on a risk-adjusted basis, while consumer discretionary lagged with NKE -1.50% on weak China guidance.",
-        "Bitcoin surged past $87,000 (+2.34%) on record institutional ETF inflows, while the VIX "
-        "collapsed to 14.62 (-3.18%), signaling market complacency that warrants caution at these levels.",
-    ]
+    return generate_summary(demo_watchlist(), demo_macro())
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
@@ -695,7 +605,7 @@ def generate_report():
         macro = fetch_macro()
         news = fetch_news()
         # Generate summary
-        summary = generate_ai_summary(indices, watchlist, macro, news)
+        summary = generate_summary(watchlist, macro)
 
     # Render HTML
     print("Rendering HTML report...")
