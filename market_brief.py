@@ -321,25 +321,40 @@ HTML_TEMPLATE = Template("""\
       </thead>
       <tbody>
         {% for s in stocks %}
-        {% set dc     = '#00c853' if s.change_pct > 0    else ('#ff3d3d' if s.change_pct < 0    else '#94a3b8') %}
-        {% set wc     = '#00c853' if s.weekly_change > 0  else ('#ff3d3d' if s.weekly_change < 0  else '#94a3b8') %}
-        {% set dc_bg  = 'rgba(0,200,83,0.10)' if s.change_pct > 0 else ('rgba(255,61,61,0.10)' if s.change_pct < 0 else 'rgba(148,163,184,0.08)') %}
-        {% set wc_bg  = 'rgba(0,200,83,0.10)' if s.weekly_change > 0 else ('rgba(255,61,61,0.10)' if s.weekly_change < 0 else 'rgba(148,163,184,0.08)') %}
-        {% set row_bg = 'rgba(0,200,83,0.05)' if s.change_pct > 2 else ('rgba(255,61,61,0.05)' if s.change_pct < -2 else 'transparent') %}
+        {% set dc     = '#00c853' if s.change_pct > 0   else ('#ff3d3d' if s.change_pct < 0   else '#94a3b8') %}
+        {% set wc     = '#00c853' if s.weekly_change > 0 else ('#ff3d3d' if s.weekly_change < 0 else '#94a3b8') %}
+        {% set dc_bg  = 'rgba(0,200,83,0.15)'  if s.change_pct > 0   else ('rgba(255,61,61,0.15)'  if s.change_pct < 0   else 'rgba(148,163,184,0.06)') %}
+        {% set wc_bg  = 'rgba(0,200,83,0.15)'  if s.weekly_change > 0 else ('rgba(255,61,61,0.15)'  if s.weekly_change < 0 else 'rgba(148,163,184,0.06)') %}
+        {% set row_bg = 'rgba(0,200,83,0.08)'  if s.change_pct > 2   else ('rgba(255,61,61,0.08)'  if s.change_pct < -2   else 'transparent') %}
+        {% set d_arrow = '▲' if s.change_pct > 0   else ('▼' if s.change_pct < 0   else '') %}
+        {% set w_arrow = '▲' if s.weekly_change > 0 else ('▼' if s.weekly_change < 0 else '') %}
         {% set vol_c  = '#f59e0b' if s.vol_ratio > 1.5 else '#94a3b8' %}
         {% set td_b   = S_TD if not loop.last else S_TD_END %}
+        {# SVG range bar: 150×16, gradient track, white dot at range_pct position #}
+        {% set dot_x  = (s.range_pct / 100 * 150) | round(1) %}
         <tr style="background:{{ row_bg }};">
-          <td style="{{ td_b }}"><strong style="color:#ffffff;font-size:14px;letter-spacing:0.3px;">{{ s.ticker }}</strong></td>
-          <td style="{{ td_b }}">{{ "{:,.2f}".format(s.price) }}</td>
-          <td style="padding:9px 12px;{% if not loop.last %}border-bottom:1px solid #1e2d45;{% endif %}background:{{ dc_bg }};color:{{ dc }};font-weight:700;">{{ "{:+.2f}".format(s.change_pct) }}%</td>
-          <td style="padding:9px 12px;{% if not loop.last %}border-bottom:1px solid #1e2d45;{% endif %}background:{{ wc_bg }};color:{{ wc }};font-weight:700;">{{ "{:+.2f}".format(s.weekly_change) }}%</td>
-          <td style="{{ td_b }}color:{{ vol_c }};">{{ "{:,.0f}".format(s.volume) }} <span style="color:#64748b;">({{ "{:.1f}x".format(s.vol_ratio) }})</span></td>
-          <td style="{{ td_b }}min-width:130px;">
-            <div style="font-size:10px;color:#64748b;margin-bottom:3px;">{{ "{:,.0f}".format(s.low_52) }} — {{ "{:,.0f}".format(s.high_52) }} &nbsp;<span style="color:#94a3b8;">{{ s.range_pct | round(0) | int }}% of range</span></div>
-            <div style="width:100%;height:8px;background:#1a2540;border-radius:4px;overflow:hidden;">
-              <div style="width:100%;height:100%;background:linear-gradient(90deg,#ff3d3d 0%,#eab308 50%,#00c853 100%);border-radius:4px;"></div>
+          <td style="{{ td_b }}"><strong style="color:#ffffff;font-size:15px;font-weight:800;letter-spacing:0.4px;">{{ s.ticker }}</strong></td>
+          <td style="{{ td_b }}font-size:13px;">{{ "{:,.2f}".format(s.price) }}</td>
+          <td style="padding:9px 12px;{% if not loop.last %}border-bottom:1px solid #1e2d45;{% endif %}background:{{ dc_bg }};color:{{ dc }};font-weight:800;font-size:13px;">{{ d_arrow }} {{ "{:+.2f}".format(s.change_pct) }}%</td>
+          <td style="padding:9px 12px;{% if not loop.last %}border-bottom:1px solid #1e2d45;{% endif %}background:{{ wc_bg }};color:{{ wc }};font-weight:800;font-size:13px;">{{ w_arrow }} {{ "{:+.2f}".format(s.weekly_change) }}%</td>
+          <td style="{{ td_b }}color:{{ vol_c }};font-size:12px;">{{ "{:,.0f}".format(s.volume) }}<br><span style="color:#64748b;">({{ "{:.1f}x".format(s.vol_ratio) }})</span></td>
+          <td style="{{ td_b }}min-width:150px;">
+            <div style="font-size:10px;color:#64748b;margin-bottom:4px;">
+              {{ "{:,.0f}".format(s.low_52) }} — {{ "{:,.0f}".format(s.high_52) }}
+              &nbsp;<span style="color:#4fc3f7;font-weight:700;">{{ s.range_pct | round(0) | int }}%</span>
             </div>
-            <div style="width:{{ s.range_pct | round(1) }}%;height:2px;background:#4fc3f7;margin-top:1px;border-radius:1px;"></div>
+            <svg width="150" height="16" style="display:block;overflow:visible;">
+              <defs>
+                <linearGradient id="rg_{{ s.ticker }}" x1="0%" y1="0%" x2="100%" y2="0%">
+                  <stop offset="0%"   stop-color="#ff3d3d"/>
+                  <stop offset="50%"  stop-color="#eab308"/>
+                  <stop offset="100%" stop-color="#00c853"/>
+                </linearGradient>
+              </defs>
+              <rect x="0" y="2" width="150" height="12" rx="6" fill="#1a2540"/>
+              <rect x="0" y="2" width="150" height="12" rx="6" fill="url(#rg_{{ s.ticker }})"/>
+              <circle cx="{{ dot_x }}" cy="8" r="6" fill="#ffffff" stroke="#4fc3f7" stroke-width="2.5"/>
+            </svg>
           </td>
         </tr>
         {% endfor %}
