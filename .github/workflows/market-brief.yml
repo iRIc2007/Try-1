@@ -1,16 +1,23 @@
 # ─────────────────────────────────────────────────────────────────────────────
 # Daily Market Brief — GitHub Actions Workflow
-# Runs every morning at 7:00 AM Milan time (6:00 AM UTC)
+# Runs every morning at 7:00 AM Milan time, year-round.
+#
+# Italy uses CET (UTC+1) in winter and CEST (UTC+2) in summer:
+#   CET  (Nov–Mar): 7 AM Milan = 6 AM UTC  →  cron "0 6 * * *"
+#   CEST (Mar–Oct): 7 AM Milan = 5 AM UTC  →  cron "0 5 * * *"
+#
+# Both crons fire daily. Step 1 checks the actual Milan hour and
+# skips the run if it is not 07:xx, so only one run proceeds.
 # ─────────────────────────────────────────────────────────────────────────────
 
 name: Daily Market Brief
 
 on:
-  # ── Automatic schedule: every day at 6:00 AM UTC (= 7:00 AM Milan) ──
   schedule:
-    - cron: "0 6 * * *"
+    - cron: "0 5 * * *"    # 7:00 AM Milan during CEST (summer)
+    - cron: "0 6 * * *"    # 7:00 AM Milan during CET  (winter)
 
-  # ── Manual trigger: click "Run workflow" in the Actions tab to test ──
+  # Manual trigger always runs (skips the timezone gate)
   workflow_dispatch:
 
 jobs:
@@ -19,22 +26,45 @@ jobs:
     timeout-minutes: 15
 
     steps:
+      # ── 0. Timezone gate: skip if Milan time is not 07:xx ──
+      #    (manual dispatch always passes through)
+      - name: Check Milan time
+        id: tz_check
+        run: |
+          MILAN_HOUR=$(TZ='Europe/Rome' date +%H)
+          MILAN_TIME=$(TZ='Europe/Rome' date '+%H:%M %Z')
+          echo "Milan time: $MILAN_TIME"
+          if [[ "${{ github.event_name }}" == "workflow_dispatch" ]]; then
+            echo "skip=false" >> "$GITHUB_OUTPUT"
+            echo "✅ Manual dispatch — proceeding regardless of time"
+          elif [ "$MILAN_HOUR" = "07" ]; then
+            echo "skip=false" >> "$GITHUB_OUTPUT"
+            echo "✅ Milan time is $MILAN_TIME — proceeding"
+          else
+            echo "skip=true" >> "$GITHUB_OUTPUT"
+            echo "⏭️  Skipping: Milan time is $MILAN_TIME, not 07:xx"
+          fi
+
       # ── 1. Check out the repo ──
       - name: Checkout repository
+        if: steps.tz_check.outputs.skip != 'true'
         uses: actions/checkout@v4
 
       # ── 2. Set up Python 3.11 ──
       - name: Set up Python 3.11
+        if: steps.tz_check.outputs.skip != 'true'
         uses: actions/setup-python@v5
         with:
           python-version: "3.11"
 
       # ── 3. Install dependencies ──
       - name: Install dependencies
+        if: steps.tz_check.outputs.skip != 'true'
         run: pip install -r requirements.txt
 
       # ── 4. Run market_brief.py with live data ──
       - name: Generate market brief
+        if: steps.tz_check.outputs.skip != 'true'
         id: generate
         run: |
           python market_brief.py
@@ -43,9 +73,11 @@ jobs:
           echo "report_path=$REPORT" >> "$GITHUB_OUTPUT"
           echo "✅ Report generated: $REPORT"
 
-      # ── 5. Email the HTML report (embedded in body, not attachment) ──
+      # ── 5. Email the HTML report ──
+      #    Secrets verified:  GMAIL_USERNAME  ✓
+      #                       GMAIL_APP_PASSWORD  ✓
       - name: Email report
-        if: success()
+        if: steps.tz_check.outputs.skip != 'true' && success()
         uses: dawidd6/action-send-mail@v3
         with:
           server_address: smtp.gmail.com
@@ -58,9 +90,9 @@ jobs:
           html_body: file://${{ steps.generate.outputs.report_path }}
           content_type: text/html
 
-      # ── 6. Failure alert — sends email if anything above broke ──
+      # ── 6. Failure alert ──
       - name: Send failure alert
-        if: failure()
+        if: steps.tz_check.outputs.skip != 'true' && failure()
         uses: dawidd6/action-send-mail@v3
         with:
           server_address: smtp.gmail.com
