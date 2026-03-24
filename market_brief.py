@@ -10,68 +10,82 @@ import os
 import random
 import sys
 import time
+from concurrent.futures import ThreadPoolExecutor, TimeoutError as FuturesTimeout
 from datetime import datetime, timedelta
 from pathlib import Path
 from zoneinfo import ZoneInfo
 
 import feedparser
+import requests
 import yfinance as yf
 from jinja2 import Template
 
 import config
 
 DEMO_MODE = "--demo" in sys.argv
+HEALTHCHECK_MODE = "--healthcheck" in sys.argv
+FETCH_TIMEOUT = 30  # seconds per individual ticker / feed fetch
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
 # 1. DATA FETCHING
 # ═══════════════════════════════════════════════════════════════════════════════
 
-def fetch_quote(ticker_symbol: str) -> dict:
-    """Fetch current price, change %, and metadata for one ticker."""
-    try:
-        tk = yf.Ticker(ticker_symbol)
-        info = tk.fast_info
-        hist = tk.history(period="5d")
+def _fetch_quote_inner(ticker_symbol: str) -> dict | None:
+    """Core fetch logic for one ticker (no timeout wrapper)."""
+    tk = yf.Ticker(ticker_symbol)
+    info = tk.fast_info
+    hist = tk.history(period="5d")
 
-        if hist.empty or len(hist) < 2:
-            return None
-
-        current = hist["Close"].iloc[-1]
-        prev = hist["Close"].iloc[-2]
-        change_pct = ((current - prev) / prev) * 100
-
-        # 52-week data
-        hist_1y = tk.history(period="1y")
-        high_52 = hist_1y["High"].max() if not hist_1y.empty else current
-        low_52 = hist_1y["Low"].min() if not hist_1y.empty else current
-
-        # Volume vs average
-        vol = hist["Volume"].iloc[-1]
-        avg_vol = hist["Volume"].mean()
-
-        # Weekly change (5 trading days)
-        if len(hist) >= 5:
-            week_ago = hist["Close"].iloc[0]
-            weekly_change = ((current - week_ago) / week_ago) * 100
-        else:
-            weekly_change = change_pct
-
-        return {
-            "price": current,
-            "change_pct": change_pct,
-            "weekly_change": weekly_change,
-            "volume": int(vol),
-            "avg_volume": int(avg_vol),
-            "vol_ratio": (vol / avg_vol) if avg_vol > 0 else 0,
-            "high_52": high_52,
-            "low_52": low_52,
-            "range_pct": ((current - low_52) / (high_52 - low_52) * 100)
-                         if high_52 != low_52 else 50,
-        }
-    except Exception as e:
-        print(f"  ⚠ Could not fetch {ticker_symbol}: {e}")
+    if hist.empty or len(hist) < 2:
         return None
+
+    current = hist["Close"].iloc[-1]
+    prev = hist["Close"].iloc[-2]
+    change_pct = ((current - prev) / prev) * 100
+
+    # 52-week data
+    hist_1y = tk.history(period="1y")
+    high_52 = hist_1y["High"].max() if not hist_1y.empty else current
+    low_52 = hist_1y["Low"].min() if not hist_1y.empty else current
+
+    # Volume vs average
+    vol = hist["Volume"].iloc[-1]
+    avg_vol = hist["Volume"].mean()
+
+    # Weekly change (5 trading days)
+    if len(hist) >= 5:
+        week_ago = hist["Close"].iloc[0]
+        weekly_change = ((current - week_ago) / week_ago) * 100
+    else:
+        weekly_change = change_pct
+
+    return {
+        "price": current,
+        "change_pct": change_pct,
+        "weekly_change": weekly_change,
+        "volume": int(vol),
+        "avg_volume": int(avg_vol),
+        "vol_ratio": (vol / avg_vol) if avg_vol > 0 else 0,
+        "high_52": high_52,
+        "low_52": low_52,
+        "range_pct": ((current - low_52) / (high_52 - low_52) * 100)
+                     if high_52 != low_52 else 50,
+    }
+
+
+def fetch_quote(ticker_symbol: str) -> dict | None:
+    """Fetch one ticker with a 30-second timeout. Returns None on any failure."""
+    with ThreadPoolExecutor(max_workers=1) as pool:
+        future = pool.submit(_fetch_quote_inner, ticker_symbol)
+        try:
+            return future.result(timeout=FETCH_TIMEOUT)
+        except FuturesTimeout:
+            print(f"  ⚠ Timeout ({FETCH_TIMEOUT}s) fetching {ticker_symbol}")
+            return None
+        except Exception as e:
+            print(f"  ⚠ Could not fetch {ticker_symbol}: {e}")
+            return None
 
 
 def fetch_indices() -> list[dict]:
@@ -120,22 +134,35 @@ def fetch_macro() -> list[dict]:
     return results
 
 
+def _fetch_one_feed(source_name: str, url: str) -> list[dict]:
+    """Fetch a single RSS feed with a requests timeout, return article list."""
+    resp = requests.get(url, timeout=FETCH_TIMEOUT)
+    resp.raise_for_status()
+    feed = feedparser.parse(resp.content)
+    items = []
+    for entry in feed.entries[:10]:
+        pub = entry.get("published_parsed") or entry.get("updated_parsed")
+        pub_dt = datetime(*pub[:6]) if pub else None
+        items.append({
+            "title": entry.get("title", "").strip(),
+            "link": entry.get("link", "#"),
+            "source": source_name,
+            "published": pub_dt,
+        })
+    return items
+
+
 def fetch_news() -> list[dict]:
-    """Fetch headlines from RSS feeds."""
+    """Fetch headlines from RSS feeds — each feed gets a 30s timeout."""
     print("Fetching news headlines...")
     articles = []
     for source_name, url in config.RSS_FEEDS:
         try:
-            feed = feedparser.parse(url)
-            for entry in feed.entries[:10]:
-                pub = entry.get("published_parsed") or entry.get("updated_parsed")
-                pub_dt = datetime(*pub[:6]) if pub else None
-                articles.append({
-                    "title": entry.get("title", "").strip(),
-                    "link": entry.get("link", "#"),
-                    "source": source_name,
-                    "published": pub_dt,
-                })
+            items = _fetch_one_feed(source_name, url)
+            articles.extend(items)
+            print(f"  ✓ {source_name}: {len(items)} articles")
+        except requests.Timeout:
+            print(f"  ⚠ Timeout ({FETCH_TIMEOUT}s) fetching RSS: {source_name}")
         except Exception as e:
             print(f"  ⚠ RSS error ({source_name}): {e}")
 
@@ -851,5 +878,75 @@ def generate_report():
     return filepath
 
 
+def run_healthcheck():
+    """Full data-source health check: every ticker, every RSS feed."""
+    print(f"\n{'='*60}")
+    print(f"  DATA SOURCE HEALTH CHECK")
+    print(f"  Timeout per source: {FETCH_TIMEOUT}s")
+    print(f"{'='*60}\n")
+
+    results = {"pass": [], "fail": []}
+
+    # ── Yahoo Finance tickers ──────────────────────────────────────────────
+    all_tickers = []
+
+    # Indices
+    for name, symbol in config.INDICES.items():
+        all_tickers.append((symbol, f"Index: {name}"))
+
+    # Watchlist
+    for sector, tickers in config.WATCHLIST.items():
+        for t in tickers:
+            all_tickers.append((t, f"Watchlist: {sector}"))
+
+    # Macro
+    for name, symbol in config.MACRO.items():
+        all_tickers.append((symbol, f"Macro: {name}"))
+
+    print(f"── Yahoo Finance ({len(all_tickers)} tickers) ──")
+    for idx, (symbol, label) in enumerate(all_tickers, 1):
+        t0 = time.time()
+        q = fetch_quote(symbol)
+        elapsed = time.time() - t0
+        if q:
+            results["pass"].append(symbol)
+            print(f"  [{idx:2d}/{len(all_tickers)}] ✓ {symbol:10s} ${q['price']:>12,.2f}  {q['change_pct']:+.2f}%  ({elapsed:.1f}s)  — {label}")
+        else:
+            results["fail"].append(symbol)
+            print(f"  [{idx:2d}/{len(all_tickers)}] ✗ {symbol:10s} FAILED  ({elapsed:.1f}s)  — {label}")
+
+    # ── RSS Feeds ──────────────────────────────────────────────────────────
+    print(f"\n── RSS Feeds ({len(config.RSS_FEEDS)} sources) ──")
+    for source_name, url in config.RSS_FEEDS:
+        t0 = time.time()
+        try:
+            items = _fetch_one_feed(source_name, url)
+            elapsed = time.time() - t0
+            results["pass"].append(source_name)
+            print(f"  ✓ {source_name:20s} {len(items):2d} articles  ({elapsed:.1f}s)")
+        except requests.Timeout:
+            elapsed = time.time() - t0
+            results["fail"].append(source_name)
+            print(f"  ✗ {source_name:20s} TIMEOUT  ({elapsed:.1f}s)")
+        except Exception as e:
+            elapsed = time.time() - t0
+            results["fail"].append(source_name)
+            print(f"  ✗ {source_name:20s} ERROR: {e}  ({elapsed:.1f}s)")
+
+    # ── Summary ────────────────────────────────────────────────────────────
+    total = len(results["pass"]) + len(results["fail"])
+    print(f"\n{'='*60}")
+    print(f"  HEALTH CHECK COMPLETE")
+    print(f"  ✓ Passed: {len(results['pass'])}/{total}")
+    print(f"  ✗ Failed: {len(results['fail'])}/{total}")
+    if results["fail"]:
+        print(f"  Failed sources: {', '.join(results['fail'])}")
+    print(f"{'='*60}\n")
+    return results
+
+
 if __name__ == "__main__":
-    generate_report()
+    if HEALTHCHECK_MODE:
+        run_healthcheck()
+    else:
+        generate_report()
