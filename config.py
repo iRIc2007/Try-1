@@ -65,6 +65,9 @@ MACRO = {
     "Gold":            "GC=F",
     "Crude Oil (WTI)": "CL=F",
     "Bitcoin":         "BTC-USD",
+    "EUR/USD":         "EURUSD=X",
+    "USD/JPY":         "JPY=X",
+    "Natural Gas":     "NG=F",
 }
 
 # ─── News RSS Feeds ─────────────────────────────────────────────────────────

@@ -597,28 +597,29 @@ HTML_TEMPLATE = Template("""\
     {% endfor %}
   </div>
 
-  {# ══ MACRO DASHBOARD — 2×2 card grid ══ #}
+  {# ══ MACRO DASHBOARD — 3-column card grid ══ #}
   <div style="{{ S_CARD }}">
     <h2 style="{{ S_H2 }}">Macro Dashboard</h2>
-    {% for row in macro | batch(2) %}
-    <table style="width:100%;border-collapse:separate;border-spacing:12px;margin-bottom:{% if not loop.last %}0{% else %}0{% endif %};">
+    {% for row in macro | batch(3) %}
+    <table style="width:100%;border-collapse:separate;border-spacing:12px;margin-bottom:0;">
       <tr>
         {% for m in row %}
+        {% set is_fx   = m.symbol.endswith('=X') %}
         {% set dc      = '#00c853' if m.change_pct > 0    else ('#ff3d3d' if m.change_pct < 0    else '#94a3b8') %}
         {% set wc      = '#00c853' if m.weekly_change > 0  else ('#ff3d3d' if m.weekly_change < 0  else '#94a3b8') %}
         {% set card_bg = 'rgba(0,200,83,0.06)'  if m.change_pct > 0 else ('rgba(255,61,61,0.06)'  if m.change_pct < 0 else 'rgba(148,163,184,0.04)') %}
         {% set bdr     = '#00c85344' if m.change_pct > 0  else ('#ff3d3d44' if m.change_pct < 0  else '#1e2d45') %}
         {% set d_arrow = '▲' if m.change_pct > 0    else ('▼' if m.change_pct < 0    else '—') %}
         {% set w_arrow = '▲' if m.weekly_change > 0  else ('▼' if m.weekly_change < 0  else '—') %}
-        <td style="width:50%;background:{{ card_bg }};border:1px solid {{ bdr }};border-radius:10px;padding:18px 20px;vertical-align:top;">
+        <td style="width:33.3%;background:{{ card_bg }};border:1px solid {{ bdr }};border-radius:10px;padding:18px 20px;vertical-align:top;">
           <div style="font-size:11px;font-weight:700;color:#64748b;text-transform:uppercase;letter-spacing:1px;margin-bottom:6px;">{{ m.name }}</div>
-          <div style="font-size:26px;font-weight:800;color:#ffffff;letter-spacing:0.5px;margin-bottom:10px;">{{ "{:,.2f}".format(m.price) }}</div>
+          <div style="font-size:26px;font-weight:800;color:#ffffff;letter-spacing:0.5px;margin-bottom:10px;">{% if is_fx %}{{ "{:,.4f}".format(m.price) }}{% else %}{{ "{:,.2f}".format(m.price) }}{% endif %}</div>
           <div style="font-size:20px;font-weight:800;color:{{ dc }};margin-bottom:6px;">{{ d_arrow }} {{ "{:+.2f}".format(m.change_pct) }}%</div>
           <div style="font-size:12px;color:#64748b;">Week &nbsp;<span style="color:{{ wc }};font-weight:700;">{{ w_arrow }} {{ "{:+.2f}".format(m.weekly_change) }}%</span></div>
         </td>
-        {% if loop.length == 1 %}
-        <td style="width:50%;"></td>
-        {% endif %}
+        {% endfor %}
+        {% for _ in range(3 - row|length) %}
+        <td style="width:33.3%;"></td>
         {% endfor %}
       </tr>
     </table>
@@ -789,6 +790,15 @@ def demo_macro():
         {"name": "Bitcoin",         "symbol": "BTC-USD",  "price": 87245.80, "change_pct":  2.34,
          "weekly_change":  5.60, "volume": 28_000_000_000, "avg_volume": 24_000_000_000, "vol_ratio": 1.17,
          "high_52": 94000.0, "low_52": 52000.0, "range_pct": 83.9},
+        {"name": "EUR/USD",         "symbol": "EURUSD=X", "price": 1.0842,   "change_pct":  0.18,
+         "weekly_change":  0.45, "volume": 0, "avg_volume": 0, "vol_ratio": 0,
+         "high_52": 1.1275, "low_52": 1.0350, "range_pct": 53.2},
+        {"name": "USD/JPY",         "symbol": "JPY=X",    "price": 149.8350, "change_pct": -0.22,
+         "weekly_change": -0.65, "volume": 0, "avg_volume": 0, "vol_ratio": 0,
+         "high_52": 157.0, "low_52": 140.0, "range_pct": 57.9},
+        {"name": "Natural Gas",     "symbol": "NG=F",     "price": 4.12,     "change_pct":  1.85,
+         "weekly_change":  3.20, "volume": 145_000, "avg_volume": 130_000, "vol_ratio": 1.12,
+         "high_52": 4.80, "low_52": 1.95, "range_pct": 76.1},
     ]
 
 
