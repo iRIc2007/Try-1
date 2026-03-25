@@ -175,7 +175,54 @@ def fetch_news() -> list[dict]:
             seen.add(key)
             unique.append(a)
     unique.sort(key=lambda a: a["published"] or datetime.min, reverse=True)
-    return unique[: config.MAX_HEADLINES]
+
+    # Filter: keep only market-relevant headlines
+    relevant = [a for a in unique if _is_market_relevant(a["title"])]
+    # Fall back to unfiltered if too few pass the filter
+    if len(relevant) < config.MAX_HEADLINES:
+        relevant = unique
+    return relevant[: config.MAX_HEADLINES]
+
+
+# ─── Keywords for market-relevant headline filtering ──────────────────────────
+
+_RELEVANT_KEYWORDS = [
+    # Markets & indices
+    "s&p", "nasdaq", "dow", "stock", "shares", "equit", "rally", "selloff",
+    "bull", "bear", "futures", "index", "market",
+    # Earnings & corporate
+    "earnings", "revenue", "profit", "quarterly", "guidance", "ipo", "merger",
+    "acquisition", "buyback", "dividend", "ceo", "layoff", "restructur",
+    # Macro & central banks
+    "fed ", "federal reserve", "rate cut", "rate hike", "inflation", "cpi",
+    "ppi", "gdp", "payroll", "jobs", "unemployment", "pmi", "treasury",
+    "yield", "central bank", "ecb", "boj", "boe", "monetary", "fiscal",
+    "tariff", "trade", "deficit", "surplus", "recession",
+    # Commodities & FX
+    "oil", "crude", "gold", "silver", "copper", "natural gas", "commodity",
+    "dollar", "euro", "yen", "forex", "currency", "bitcoin", "crypto",
+    # Geopolitics
+    "sanction", "war", "geopolit", "nato", "opec", "china", "russia",
+    "ukraine", "middle east", "iran", "taiwan",
+    # Sectors
+    "bank", "financ", "tech", "semiconductor", "chip", "energy", "pharma",
+    "biotech", "fda", "drug", "ai ", "artificial intelligence",
+]
+
+_EXCLUDE_KEYWORDS = [
+    "lifestyle", "recipe", "best credit card", "personal finance tips",
+    "how to save", "retirement plan", "opinion:", "editorial:", "review:",
+    "travel", "celebrity", "entertainment", "horoscope", "wellness",
+    "self-care", "dating", "relationship", "diet", "fitness tip",
+]
+
+
+def _is_market_relevant(title: str) -> bool:
+    """Return True if the headline is about markets, earnings, macro, or geopolitics."""
+    low = title.lower()
+    if any(kw in low for kw in _EXCLUDE_KEYWORDS):
+        return False
+    return any(kw in low for kw in _RELEVANT_KEYWORDS)
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
@@ -468,6 +515,11 @@ HTML_TEMPLATE = Template("""\
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Market Brief — {{ date }}</title>
+<style>
+  @media screen and (max-width: 600px) {
+    .hide-mobile { display: none !important; }
+  }
+</style>
 </head>
 
 {# ── Colour helpers ── #}
@@ -476,9 +528,9 @@ HTML_TEMPLATE = Template("""\
 {% set bar_color = '#00c853' if sp_up else '#ff3d3d' %}
 
 {# ── Shared inline-style strings ── #}
-{% set S_BODY   = "margin:0;padding:0;background:#0a0f1e;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;color:#e2e8f0;line-height:1.5;" %}
-{% set S_WRAP   = "max-width:960px;margin:0 auto;padding:24px 16px;" %}
-{% set S_CARD   = "background:#0d1526;border:1px solid #1e2d45;border-radius:10px;padding:24px;margin-bottom:20px;" %}
+{% set S_BODY   = "margin:0;padding:0;background:#0a0f1e;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;color:#e2e8f0;font-size:15px;line-height:1.5;" %}
+{% set S_WRAP   = "max-width:700px;margin:0 auto;padding:24px 16px;" %}
+{% set S_CARD   = "background:#0d1526;border:1px solid #1e2d45;border-radius:10px;padding:24px;margin-bottom:28px;" %}
 {% set S_H2     = "font-size:18px;font-weight:700;color:#4fc3f7;margin:0 0 16px 0;padding-bottom:8px;border-bottom:2px solid #1e2d45;" %}
 {% set S_TH     = "text-align:left;padding:9px 12px;background:#111d33;font-weight:600;font-size:11px;text-transform:uppercase;letter-spacing:0.5px;color:#4fc3f7;border-bottom:2px solid #1e2d45;" %}
 {% set S_TD     = "padding:9px 12px;border-bottom:1px solid #1e2d45;color:#e2e8f0;" %}
@@ -569,8 +621,8 @@ HTML_TEMPLATE = Template("""\
           <th style="{{ S_TH }}">Index</th>
           <th style="{{ S_TH }}">Price</th>
           <th style="{{ S_TH }}">Daily Chg</th>
-          <th style="{{ S_TH }}">Weekly Chg</th>
-          <th style="{{ S_TH }}">Trend</th>
+          <th class="hide-mobile" style="{{ S_TH }}">Weekly Chg</th>
+          <th class="hide-mobile" style="{{ S_TH }}">Trend</th>
         </tr>
       </thead>
       <tbody>
@@ -585,8 +637,8 @@ HTML_TEMPLATE = Template("""\
           <td style="{{ td_b }}"><strong style="color:#ffffff;">{{ i.name }}</strong></td>
           <td style="{{ td_b }}">{{ "{:,.2f}".format(i.price) }}</td>
           <td style="{{ td_b }}color:{{ dc }};font-weight:700;">{{ "{:+.2f}".format(i.change_pct) }}%</td>
-          <td style="{{ td_b }}color:{{ wc }};font-weight:700;">{{ "{:+.2f}".format(i.weekly_change) }}%</td>
-          <td style="{{ td_b }}">
+          <td class="hide-mobile" style="{{ td_b }}color:{{ wc }};font-weight:700;">{{ "{:+.2f}".format(i.weekly_change) }}%</td>
+          <td class="hide-mobile" style="{{ td_b }}">
             <span style="display:inline-block;padding:2px 9px;border-radius:4px;font-size:11px;font-weight:700;color:{{ tc }};background:{{ tb }};">{{ i.trend }}</span>
           </td>
         </tr>
@@ -655,9 +707,9 @@ HTML_TEMPLATE = Template("""\
           <th style="{{ S_TH }}">Ticker</th>
           <th style="{{ S_TH }}">Price</th>
           <th style="{{ S_TH }}">Day %</th>
-          <th style="{{ S_TH }}">Week %</th>
-          <th style="{{ S_TH }}">Vol vs Avg</th>
-          <th style="{{ S_TH }}">52-Wk Range</th>
+          <th class="hide-mobile" style="{{ S_TH }}">Week %</th>
+          <th class="hide-mobile" style="{{ S_TH }}">Vol vs Avg</th>
+          <th class="hide-mobile" style="{{ S_TH }}">52-Wk Range</th>
         </tr>
       </thead>
       <tbody>
@@ -678,9 +730,9 @@ HTML_TEMPLATE = Template("""\
           <td style="{{ td_b }}"><strong style="color:#ffffff;font-size:15px;font-weight:800;letter-spacing:0.4px;">{% if s.change_pct > 5 or s.change_pct < -5 %}🔥 {% endif %}{{ s.ticker }}</strong></td>
           <td style="{{ td_b }}font-size:13px;">{{ "{:,.2f}".format(s.price) }}</td>
           <td style="padding:9px 12px;{% if not loop.last %}border-bottom:1px solid #1e2d45;{% endif %}background:{{ dc_bg }};color:{{ dc }};font-weight:800;font-size:13px;">{{ d_arrow }} {{ "{:+.2f}".format(s.change_pct) }}%</td>
-          <td style="padding:9px 12px;{% if not loop.last %}border-bottom:1px solid #1e2d45;{% endif %}background:{{ wc_bg }};color:{{ wc }};font-weight:800;font-size:13px;">{{ w_arrow }} {{ "{:+.2f}".format(s.weekly_change) }}%</td>
-          <td style="{{ td_b }}color:{{ vol_c }};font-size:12px;">{{ "{:,.0f}".format(s.volume) }}<br><span style="color:#64748b;">({{ "{:.1f}x".format(s.vol_ratio) }})</span></td>
-          <td style="{{ td_b }}min-width:150px;">
+          <td class="hide-mobile" style="padding:9px 12px;{% if not loop.last %}border-bottom:1px solid #1e2d45;{% endif %}background:{{ wc_bg }};color:{{ wc }};font-weight:800;font-size:13px;">{{ w_arrow }} {{ "{:+.2f}".format(s.weekly_change) }}%</td>
+          <td class="hide-mobile" style="{{ td_b }}color:{{ vol_c }};font-size:12px;">{{ "{:,.0f}".format(s.volume) }}<br><span style="color:#64748b;">({{ "{:.1f}x".format(s.vol_ratio) }})</span></td>
+          <td class="hide-mobile" style="{{ td_b }}min-width:150px;">
             <div style="font-size:10px;color:#64748b;margin-bottom:4px;">
               {{ "{:,.0f}".format(s.low_52) }} — {{ "{:,.0f}".format(s.high_52) }}
               &nbsp;<span style="color:#4fc3f7;font-weight:700;">{{ s.range_pct | round(0) | int }}%</span>
@@ -868,21 +920,11 @@ def demo_news():
         ("Gold Hits Fresh Record Above $3,000 on Central Bank Buying Spree", "MarketWatch"),
         ("Tesla Unveils Affordable Model Q Targeting $25,000 Price Point", "Yahoo Finance"),
         ("Bitcoin Tops $87,000 as Institutional ETF Inflows Accelerate", "CNBC Top News"),
-        ("Amazon Web Services Announces $10B Data Center Expansion in Europe", "Reuters Business"),
         ("U.S. Manufacturing PMI Surprises to Upside, Signals Recovery", "MarketWatch"),
-        ("Eli Lilly Weight-Loss Drug Shows 25% Efficacy Gain in Phase 3 Trial", "Yahoo Finance"),
         ("China Cuts Reserve Requirement Ratio to Boost Slowing Economy", "Reuters Business"),
         ("Goldman Sachs Raises S&P 500 Year-End Target to 6,200", "CNBC Top News"),
         ("Oil Slips Below $69 on Demand Concerns Despite OPEC+ Cuts", "MarketWatch"),
-        ("Apple Vision Pro 2 Rumored for September Launch with 50% Price Cut", "Yahoo Finance"),
         ("European Central Bank Holds Rates Steady, Signals June Cut", "Reuters Business"),
-        ("Nike Drops 1.5% After Downbeat China Revenue Guidance", "CNBC Top News"),
-        ("Intel Restructuring Plan Includes 5,000 Additional Layoffs", "MarketWatch"),
-        ("GE Aerospace Wins $4.8B Pentagon Contract for Next-Gen Engines", "Yahoo Finance"),
-        ("Starbucks Same-Store Sales Decline for Third Straight Quarter", "Reuters Business"),
-        ("Broadcom AI Revenue Doubles Year-Over-Year, Stock Jumps 2.8%", "CNBC Top News"),
-        ("U.S. 10-Year Yield Dips Below 4.3% on Flight to Safety", "MarketWatch"),
-        ("Costco Tops Earnings Estimates with 8.2% Revenue Growth", "Yahoo Finance"),
     ]
     now = datetime.now()
     return [

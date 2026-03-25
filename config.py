@@ -80,5 +80,5 @@ RSS_FEEDS = [
 ]
 
 # ─── Report Settings ────────────────────────────────────────────────────────
-MAX_HEADLINES = 20          # How many news headlines to show
+MAX_HEADLINES = 10          # How many news headlines to show
 REPORT_DIR = "reports"      # Folder where HTML reports are saved
