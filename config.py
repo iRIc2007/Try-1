@@ -11,61 +11,41 @@ WATCHLIST = {
         "AAPL",   # Apple
         "MSFT",   # Microsoft
         "GOOGL",  # Alphabet
-        "META",   # Meta Platforms
-        "AMZN",   # Amazon
-        "CRM",    # Salesforce
-        "ORCL",   # Oracle
     ],
     "Semiconductors": [
         "NVDA",   # NVIDIA
         "AMD",    # AMD
-        "AVGO",   # Broadcom
         "TSM",    # TSMC
-        "INTC",   # Intel
-        "QCOM",   # Qualcomm
     ],
     "Healthcare": [
-        "UNH",    # UnitedHealth
-        "JNJ",    # Johnson & Johnson
         "LLY",    # Eli Lilly
-        "PFE",    # Pfizer
+        "UNH",    # UnitedHealth
         "ABBV",   # AbbVie
-        "MRK",    # Merck
     ],
     "Energy": [
         "XOM",    # ExxonMobil
-        "CVX",    # Chevron
         "COP",    # ConocoPhillips
-        "SLB",    # Schlumberger
-        "EOG",    # EOG Resources
+        "CVX",    # Chevron
     ],
     "Utilities": [
         "NEE",    # NextEra Energy
-        "DUK",    # Duke Energy
         "SO",     # Southern Company
-        "D",      # Dominion Energy
-        "AEP",    # American Electric Power
+        "DUK",    # Duke Energy
     ],
-    "Infrastructure / Industrials": [
+    "Industrials": [
         "CAT",    # Caterpillar
-        "DE",     # Deere & Co
-        "UNP",    # Union Pacific
-        "HON",    # Honeywell
         "GE",     # GE Aerospace
+        "DE",     # Deere & Co
     ],
     "Financials": [
         "JPM",    # JPMorgan Chase
         "GS",     # Goldman Sachs
         "V",      # Visa
-        "MA",     # Mastercard
-        "BRK-B",  # Berkshire Hathaway
     ],
-    "Consumer / Retail": [
-        "WMT",    # Walmart
+    "Consumer": [
         "COST",   # Costco
+        "WMT",    # Walmart
         "NKE",    # Nike
-        "MCD",    # McDonald's
-        "SBUX",   # Starbucks
     ],
 }
 
