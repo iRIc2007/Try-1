@@ -907,9 +907,6 @@ def demo_macro():
         {"name": "USD/JPY",         "symbol": "JPY=X",    "price": 149.8350, "change_pct": -0.22,
          "weekly_change": -0.65, "volume": 0, "avg_volume": 0, "vol_ratio": 0,
          "high_52": 157.0, "low_52": 140.0, "range_pct": 57.9},
-        {"name": "Natural Gas",     "symbol": "NG=F",     "price": 4.12,     "change_pct":  1.85,
-         "weekly_change":  3.20, "volume": 145_000, "avg_volume": 130_000, "vol_ratio": 1.12,
-         "high_52": 4.80, "low_52": 1.95, "range_pct": 76.1},
     ]
 
 

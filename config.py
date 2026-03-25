@@ -67,7 +67,6 @@ MACRO = {
     "Bitcoin":         "BTC-USD",
     "EUR/USD":         "EURUSD=X",
     "USD/JPY":         "JPY=X",
-    "Natural Gas":     "NG=F",
 }
 
 # ─── News RSS Feeds ─────────────────────────────────────────────────────────
