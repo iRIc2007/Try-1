@@ -182,17 +182,67 @@ def fetch_news() -> list[dict]:
 # 2. AUTO-GENERATED SUMMARY (top 3 movers + biggest macro move + risk signal)
 # ═══════════════════════════════════════════════════════════════════════════════
 
-def generate_summary(indices, watchlist, macro) -> list[str]:
-    """Build a simple summary from fetched data — no API needed."""
+def generate_summary(indices, watchlist, macro) -> dict:
+    """Build above-the-fold (3 lines) + snapshot bullets from fetched data."""
+    above_fold = []
     bullets = []
 
-    # ── Top 3 watchlist movers (by absolute daily change) ──
+    # ── Gather all stocks sorted by absolute daily change ──
     all_stocks = []
     for sector, stocks in watchlist.items():
         for st in stocks:
             all_stocks.append((sector, st))
     all_stocks.sort(key=lambda x: abs(x[1]["change_pct"]), reverse=True)
 
+    idx_map = {i["name"]: i for i in indices}
+
+    # ═══ ABOVE THE FOLD — exactly 3 lines ═══
+
+    # 1. Market direction (based on S&P 500)
+    sp = idx_map.get("S&P 500")
+    if sp:
+        direction = "higher" if sp["change_pct"] > 0 else "lower"
+        above_fold.append(
+            f"Markets traded {direction} — S&P 500 {sp['change_pct']:+.2f}% "
+            f"to {sp['price']:,.2f}."
+        )
+
+    # 2. Biggest watchlist mover
+    if all_stocks:
+        sector, st = all_stocks[0]
+        direction = "up" if st["change_pct"] > 0 else "down"
+        above_fold.append(
+            f"Top mover: {st['ticker']} ({sector}) {direction} "
+            f"{st['change_pct']:+.2f}% to ${st['price']:,.2f}."
+        )
+
+    # 3. One key risk line
+    vix = idx_map.get("VIX")
+    if vix:
+        if vix["price"] >= 25:
+            above_fold.append(
+                f"⚠ Risk elevated — VIX at {vix['price']:.1f} "
+                f"({vix['change_pct']:+.2f}%), signaling high market fear."
+            )
+        elif vix["price"] >= 20:
+            above_fold.append(
+                f"⚠ Risk rising — VIX at {vix['price']:.1f} "
+                f"({vix['change_pct']:+.2f}%), above the long-term average."
+            )
+        elif vix["change_pct"] > 10:
+            above_fold.append(
+                f"⚠ VIX spiked {vix['change_pct']:+.1f}% to {vix['price']:.1f} — "
+                f"watch for volatility expansion."
+            )
+        else:
+            above_fold.append(
+                f"Risk subdued — VIX at {vix['price']:.1f} "
+                f"({vix['change_pct']:+.2f}%), markets calm."
+            )
+
+    # ═══ SNAPSHOT — full bullet list ═══
+
+    # Top 3 watchlist movers
     for sector, st in all_stocks[:3]:
         direction = "up" if st["change_pct"] > 0 else "down"
         bullets.append(
@@ -200,7 +250,7 @@ def generate_summary(indices, watchlist, macro) -> list[str]:
             f"to ${st['price']:,.2f}."
         )
 
-    # ── Biggest macro move ──
+    # Biggest macro move
     if macro:
         top_macro = max(macro, key=lambda m: abs(m["change_pct"]))
         direction = "up" if top_macro["change_pct"] > 0 else "down"
@@ -209,9 +259,7 @@ def generate_summary(indices, watchlist, macro) -> list[str]:
             f"to ${top_macro['price']:,.2f} — biggest macro move of the day."
         )
 
-    # ── Key risk signal ──
-    idx_map = {i["name"]: i for i in indices}
-    vix = idx_map.get("VIX")
+    # Key risk signal (duplicated in snapshot for detail)
     if vix:
         if vix["price"] >= 25:
             bullets.append(
@@ -234,7 +282,7 @@ def generate_summary(indices, watchlist, macro) -> list[str]:
                 f"markets calm."
             )
 
-    # ── Monday Weekly Outlook ──
+    # Monday Weekly Outlook
     now = datetime.now()
     if now.weekday() == 0:  # Monday
         bullets.append(
@@ -244,7 +292,7 @@ def generate_summary(indices, watchlist, macro) -> list[str]:
             "and any ECB or BoJ policy signals."
         )
 
-    return bullets
+    return {"above_fold": above_fold, "snapshot": bullets}
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
@@ -453,15 +501,47 @@ HTML_TEMPLATE = Template("""\
     </div>
   </div>
 
-  {# ══ VIX HIGH-VOLATILITY ALERT ══ #}
-  {% if vix_alert %}
-  <div style="background:rgba(255,61,61,0.12);border:2px solid #ff3d3d;border-radius:10px;padding:16px 24px;margin-bottom:20px;text-align:center;">
-    <span style="font-size:20px;font-weight:800;color:#ff3d3d;">⚠️ High Volatility Alert</span>
-    <span style="font-size:15px;color:#fca5a5;margin-left:10px;">— VIX at {{ vix_alert.price }} ({{ "{:+.2f}".format(vix_alert.change_pct) }}%)</span>
+  {# ══ 3. ABOVE THE FOLD — exactly 3 lines ══ #}
+  <div style="{{ S_CARD }}border-left:4px solid {{ bar_color }};">
+    <h2 style="{{ S_H2 }}">Above The Fold</h2>
+    {% for bullet in above_fold %}
+    {% if '⚠' in bullet or 'elevated' in bullet or 'spike' in bullet.lower() %}
+      {% set b_border = '#ff3d3d' %}{% set b_bg = 'rgba(255,61,61,0.07)' %}
+    {% elif 'subdued' in bullet.lower() or 'calm' in bullet.lower() %}
+      {% set b_border = '#4fc3f7' %}{% set b_bg = 'rgba(79,195,247,0.07)' %}
+    {% elif 'higher' in bullet.lower() or ' up ' in bullet.lower() or ' +' in bullet %}
+      {% set b_border = '#00c853' %}{% set b_bg = 'rgba(0,200,83,0.07)' %}
+    {% elif 'lower' in bullet.lower() or ' down ' in bullet.lower() %}
+      {% set b_border = '#ff3d3d' %}{% set b_bg = 'rgba(255,61,61,0.07)' %}
+    {% else %}
+      {% set b_border = '#4fc3f7' %}{% set b_bg = 'rgba(79,195,247,0.07)' %}
+    {% endif %}
+    <div style="padding:11px 14px;margin-bottom:8px;border-radius:8px;background:{{ b_bg }};border-left:4px solid {{ b_border }};font-size:14px;line-height:1.65;color:#e2e8f0;">{{ bullet }}</div>
+    {% endfor %}
+  </div>
+
+  {# ══ 4. RADAR — Stocks to Watch (moved up) ══ #}
+  {% if radar %}
+  <div style="{{ S_CARD }}">
+    <h2 style="{{ S_H2 }}">🔔 Radar — Stocks to Watch</h2>
+    {% for r in radar %}
+    {% set row_bg = '#111d33' if loop.index is odd else 'transparent' %}
+    <div style="padding:12px 14px;margin-bottom:6px;border-radius:8px;background:{{ row_bg }};border-left:4px solid {{ r.color }};">
+      <span style="font-size:17px;font-weight:900;color:#ffffff;letter-spacing:0.5px;">{{ r.ticker }}</span>
+      <span style="font-size:13px;color:#64748b;margin-left:8px;">{{ r.sector }}</span>
+      <span style="font-size:14px;font-weight:800;color:{{ r.color }};margin-left:12px;">{{ "{:+.2f}".format(r.change_pct) }}%</span>
+      <span style="font-size:13px;color:#ffffff;margin-left:4px;">${{ "{:,.2f}".format(r.price) }}</span>
+      <div style="margin-top:4px;">
+        {% for reason in r.reasons %}
+        <span style="display:inline-block;padding:2px 8px;border-radius:4px;font-size:10px;font-weight:700;color:{{ r.color }};background:{{ r.color }}22;margin-right:6px;margin-top:2px;">{{ reason }}</span>
+        {% endfor %}
+      </div>
+    </div>
+    {% endfor %}
   </div>
   {% endif %}
 
-  {# ══ TODAY'S SNAPSHOT ══ #}
+  {# ══ 5. TODAY'S SNAPSHOT ══ #}
   <div style="{{ S_CARD }}">
     <h2 style="{{ S_H2 }}">Today's Snapshot</h2>
     {% for bullet in summary %}
@@ -480,7 +560,7 @@ HTML_TEMPLATE = Template("""\
     {% endfor %}
   </div>
 
-  {# ══ MARKET OVERVIEW ══ #}
+  {# ══ 6. MARKET OVERVIEW ══ #}
   <div style="{{ S_CARD }}">
     <h2 style="{{ S_H2 }}">Market Overview</h2>
     <table style="width:100%;border-collapse:collapse;font-size:13px;">
@@ -515,7 +595,36 @@ HTML_TEMPLATE = Template("""\
     </table>
   </div>
 
-  {# ══ WATCHLIST BY SECTOR ══ #}
+  {# ══ 7. MACRO DASHBOARD — 3-column card grid ══ #}
+  <div style="{{ S_CARD }}">
+    <h2 style="{{ S_H2 }}">Macro Dashboard</h2>
+    {% for row in macro | batch(3) %}
+    <table style="width:100%;border-collapse:separate;border-spacing:12px;margin-bottom:0;">
+      <tr>
+        {% for m in row %}
+        {% set is_fx   = m.symbol.endswith('=X') %}
+        {% set dc      = '#00c853' if m.change_pct > 0    else ('#ff3d3d' if m.change_pct < 0    else '#94a3b8') %}
+        {% set wc      = '#00c853' if m.weekly_change > 0  else ('#ff3d3d' if m.weekly_change < 0  else '#94a3b8') %}
+        {% set card_bg = 'rgba(0,200,83,0.06)'  if m.change_pct > 0 else ('rgba(255,61,61,0.06)'  if m.change_pct < 0 else 'rgba(148,163,184,0.04)') %}
+        {% set bdr     = '#00c85344' if m.change_pct > 0  else ('#ff3d3d44' if m.change_pct < 0  else '#1e2d45') %}
+        {% set d_arrow = '▲' if m.change_pct > 0    else ('▼' if m.change_pct < 0    else '—') %}
+        {% set w_arrow = '▲' if m.weekly_change > 0  else ('▼' if m.weekly_change < 0  else '—') %}
+        <td style="width:33.3%;background:{{ card_bg }};border:1px solid {{ bdr }};border-radius:10px;padding:18px 20px;vertical-align:top;">
+          <div style="font-size:11px;font-weight:700;color:#64748b;text-transform:uppercase;letter-spacing:1px;margin-bottom:6px;">{{ m.name }}</div>
+          <div style="font-size:26px;font-weight:800;color:#ffffff;letter-spacing:0.5px;margin-bottom:10px;">{% if is_fx %}{{ "{:,.4f}".format(m.price) }}{% else %}{{ "{:,.2f}".format(m.price) }}{% endif %}</div>
+          <div style="font-size:20px;font-weight:800;color:{{ dc }};margin-bottom:6px;">{{ d_arrow }} {{ "{:+.2f}".format(m.change_pct) }}%</div>
+          <div style="font-size:12px;color:#64748b;">Week &nbsp;<span style="color:{{ wc }};font-weight:700;">{{ w_arrow }} {{ "{:+.2f}".format(m.weekly_change) }}%</span></div>
+        </td>
+        {% endfor %}
+        {% for _ in range(3 - row|length) %}
+        <td style="width:33.3%;"></td>
+        {% endfor %}
+      </tr>
+    </table>
+    {% endfor %}
+  </div>
+
+  {# ══ 8. WATCHLIST BY SECTOR ══ #}
   <div style="{{ S_CARD }}">
     <h2 style="{{ S_H2 }}">Watchlist — by Sector</h2>
 
@@ -597,36 +706,7 @@ HTML_TEMPLATE = Template("""\
     {% endfor %}
   </div>
 
-  {# ══ MACRO DASHBOARD — 3-column card grid ══ #}
-  <div style="{{ S_CARD }}">
-    <h2 style="{{ S_H2 }}">Macro Dashboard</h2>
-    {% for row in macro | batch(3) %}
-    <table style="width:100%;border-collapse:separate;border-spacing:12px;margin-bottom:0;">
-      <tr>
-        {% for m in row %}
-        {% set is_fx   = m.symbol.endswith('=X') %}
-        {% set dc      = '#00c853' if m.change_pct > 0    else ('#ff3d3d' if m.change_pct < 0    else '#94a3b8') %}
-        {% set wc      = '#00c853' if m.weekly_change > 0  else ('#ff3d3d' if m.weekly_change < 0  else '#94a3b8') %}
-        {% set card_bg = 'rgba(0,200,83,0.06)'  if m.change_pct > 0 else ('rgba(255,61,61,0.06)'  if m.change_pct < 0 else 'rgba(148,163,184,0.04)') %}
-        {% set bdr     = '#00c85344' if m.change_pct > 0  else ('#ff3d3d44' if m.change_pct < 0  else '#1e2d45') %}
-        {% set d_arrow = '▲' if m.change_pct > 0    else ('▼' if m.change_pct < 0    else '—') %}
-        {% set w_arrow = '▲' if m.weekly_change > 0  else ('▼' if m.weekly_change < 0  else '—') %}
-        <td style="width:33.3%;background:{{ card_bg }};border:1px solid {{ bdr }};border-radius:10px;padding:18px 20px;vertical-align:top;">
-          <div style="font-size:11px;font-weight:700;color:#64748b;text-transform:uppercase;letter-spacing:1px;margin-bottom:6px;">{{ m.name }}</div>
-          <div style="font-size:26px;font-weight:800;color:#ffffff;letter-spacing:0.5px;margin-bottom:10px;">{% if is_fx %}{{ "{:,.4f}".format(m.price) }}{% else %}{{ "{:,.2f}".format(m.price) }}{% endif %}</div>
-          <div style="font-size:20px;font-weight:800;color:{{ dc }};margin-bottom:6px;">{{ d_arrow }} {{ "{:+.2f}".format(m.change_pct) }}%</div>
-          <div style="font-size:12px;color:#64748b;">Week &nbsp;<span style="color:{{ wc }};font-weight:700;">{{ w_arrow }} {{ "{:+.2f}".format(m.weekly_change) }}%</span></div>
-        </td>
-        {% endfor %}
-        {% for _ in range(3 - row|length) %}
-        <td style="width:33.3%;"></td>
-        {% endfor %}
-      </tr>
-    </table>
-    {% endfor %}
-  </div>
-
-  {# ══ TOP HEADLINES ══ #}
+  {# ══ 9. TOP HEADLINES ══ #}
   <div style="{{ S_CARD }}">
     <h2 style="{{ S_H2 }}">Top Headlines</h2>
     {% for n in news %}
@@ -642,27 +722,6 @@ HTML_TEMPLATE = Template("""\
     </div>
     {% endfor %}
   </div>
-
-  {# ══ RADAR — flagged stocks ══ #}
-  {% if radar %}
-  <div style="{{ S_CARD }}">
-    <h2 style="{{ S_H2 }}">🔔 Radar — Stocks to Watch</h2>
-    {% for r in radar %}
-    {% set row_bg = '#111d33' if loop.index is odd else 'transparent' %}
-    <div style="padding:12px 14px;margin-bottom:6px;border-radius:8px;background:{{ row_bg }};border-left:4px solid {{ r.color }};">
-      <span style="font-size:17px;font-weight:900;color:#ffffff;letter-spacing:0.5px;">{{ r.ticker }}</span>
-      <span style="font-size:13px;color:#64748b;margin-left:8px;">{{ r.sector }}</span>
-      <span style="font-size:14px;font-weight:800;color:{{ r.color }};margin-left:12px;">{{ "{:+.2f}".format(r.change_pct) }}%</span>
-      <span style="font-size:13px;color:#ffffff;margin-left:4px;">${{ "{:,.2f}".format(r.price) }}</span>
-      <div style="margin-top:4px;">
-        {% for reason in r.reasons %}
-        <span style="display:inline-block;padding:2px 8px;border-radius:4px;font-size:10px;font-weight:700;color:{{ r.color }};background:{{ r.color }}22;margin-right:6px;margin-top:2px;">{{ reason }}</span>
-        {% endfor %}
-      </div>
-    </div>
-    {% endfor %}
-  </div>
-  {% endif %}
 
   {# ══ FOOTER ══ #}
   <div style="text-align:center;font-size:12px;color:#4a5568;padding:20px 16px 10px;border-top:1px solid #1e2d45;line-height:1.8;">
@@ -863,19 +922,20 @@ def generate_report():
         watchlist = demo_watchlist()
         macro    = demo_macro()
         news     = demo_news()
-        summary  = demo_summary()
+        summary_data = demo_summary()
     else:
         # Fetch all data
         indices   = fetch_indices()
         watchlist = fetch_watchlist()
         macro     = fetch_macro()
         news      = fetch_news()
-        summary   = generate_summary(indices, watchlist, macro)
+        summary_data = generate_summary(indices, watchlist, macro)
 
+    above_fold    = enrich_summary(summary_data["above_fold"])
+    snapshot      = enrich_summary(summary_data["snapshot"])
     heatmap       = compute_heatmap(watchlist)
     market_status = get_market_status()
     news          = enrich_news(news)
-    summary       = enrich_summary(summary)
     radar         = compute_radar(watchlist)
 
     # VIX alert: if VIX >= 25, show a prominent red banner
@@ -887,7 +947,8 @@ def generate_report():
     html = HTML_TEMPLATE.render(
         date=date_str,
         time=time_str,
-        summary=summary,
+        above_fold=above_fold,
+        summary=snapshot,
         indices=indices,
         watchlist=watchlist,
         macro=macro,
