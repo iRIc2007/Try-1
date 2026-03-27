@@ -1,5 +1,7 @@
 name: Verify Portfolio Tickers
 on: workflow_dispatch
+permissions:
+  contents: write
 jobs:
   verify:
     runs-on: ubuntu-latest
@@ -26,18 +28,15 @@ jobs:
               "Vanguard FTSE All-World":           "VWCE.DE",
               "Netflix":                           "NFLX",
               "SPDR US Energy Select":             "SXLE.MI",
-          }
-
-          alt_tickers = {
-              "Gold (Milan alt)":     "SGLN.MI",
-              "Defense (Milan alt)":  "GUARD.MI",
-              "Health (Milan alt)":   "ESIH.MI",
+              "Gold (Milan alt)":                  "SGLN.MI",
+              "Defense (Milan alt)":               "GUARD.MI",
+              "Health (Milan alt)":                "ESIH.MI",
           }
 
           print(f"{'Name':<35} {'Ticker':<12} {'Price':>10} {'Ccy':<5} {'Status'}")
           print("=" * 75)
 
-          for name, sym in {**tickers, **alt_tickers}.items():
+          for name, sym in tickers.items():
               try:
                   t = yf.Ticker(sym)
                   h = t.history(period="5d")
@@ -56,5 +55,5 @@ jobs:
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
           git add ticker-results.txt
-          git commit -m "Ticker verification results [auto]" || echo "No changes"
-          git push
+          git commit -m "Ticker verification results [auto]" || true
+          git push || true
