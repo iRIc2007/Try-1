@@ -593,25 +593,6 @@ HTML_TEMPLATE = Template("""\
   </div>
   {% endif %}
 
-  {# ══ 5. TODAY'S SNAPSHOT ══ #}
-  <div style="{{ S_CARD }}">
-    <h2 style="{{ S_H2 }}">Today's Snapshot</h2>
-    {% for bullet in summary %}
-    {% if '⚠' in bullet or 'elevated' in bullet or 'spike' in bullet.lower() %}
-      {% set b_border = '#ff3d3d' %}{% set b_bg = 'rgba(255,61,61,0.07)' %}
-    {% elif 'subdued' in bullet.lower() or 'calm' in bullet.lower() %}
-      {% set b_border = '#4fc3f7' %}{% set b_bg = 'rgba(79,195,247,0.07)' %}
-    {% elif ' up ' in bullet.lower() or ' +' in bullet %}
-      {% set b_border = '#00c853' %}{% set b_bg = 'rgba(0,200,83,0.07)' %}
-    {% elif ' down ' in bullet.lower() %}
-      {% set b_border = '#ff3d3d' %}{% set b_bg = 'rgba(255,61,61,0.07)' %}
-    {% else %}
-      {% set b_border = '#4fc3f7' %}{% set b_bg = 'rgba(79,195,247,0.07)' %}
-    {% endif %}
-    <div style="padding:11px 14px;margin-bottom:8px;border-radius:8px;background:{{ b_bg }};border-left:4px solid {{ b_border }};font-size:14px;line-height:1.65;color:#e2e8f0;">{{ bullet }}</div>
-    {% endfor %}
-  </div>
-
   {# ══ 6. MARKET OVERVIEW ══ #}
   <div style="{{ S_CARD }}">
     <h2 style="{{ S_H2 }}">Market Overview</h2>
