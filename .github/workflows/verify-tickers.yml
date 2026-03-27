@@ -1,0 +1,50 @@
+name: Verify Portfolio Tickers
+on: workflow_dispatch
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - run: pip install yfinance
+      - name: Verify all tickers
+        run: |
+          python3 << 'EOF'
+          import yfinance as yf
+
+          tickers = {
+              "iShares Physical Gold ETC":        "PPFB.DE",
+              "BNP Easy Europe Defense":           "GUARD.PA",
+              "Amundi World Utilities":            "UTIW.MI",
+              "iShares MSCI Korea":                "CSKR.MI",
+              "iShares Europe Health Care":        "ESIH.DE",
+              "Vanguard FTSE All-World":           "VWCE.DE",
+              "Netflix":                           "NFLX",
+              "SPDR US Energy Select":             "SXLE.MI",
+          }
+
+          # Also test Milan alternatives for Gold/Defense/HealthCare
+          alt_tickers = {
+              "Gold (Milan alt)":     "SGLN.MI",
+              "Defense (Milan alt)":  "GUARD.MI",
+              "Health (Milan alt)":   "ESIH.MI",
+          }
+
+          print(f"{'Name':<35} {'Ticker':<12} {'Price':>10} {'Currency':<6} {'Status'}")
+          print("=" * 85)
+
+          for name, sym in {**tickers, **alt_tickers}.items():
+              try:
+                  t = yf.Ticker(sym)
+                  h = t.history(period="5d")
+                  if len(h) > 0:
+                      price = h['Close'].iloc[-1]
+                      cur = t.info.get('currency', '???')
+                      print(f"{name:<35} {sym:<12} {price:>10.4f} {cur:<6} OK")
+                  else:
+                      print(f"{name:<35} {sym:<12} {'':>10} {'':6} NO DATA")
+              except Exception as e:
+                  print(f"{name:<35} {sym:<12} {'':>10} {'':6} FAIL: {e}")
+          EOF
