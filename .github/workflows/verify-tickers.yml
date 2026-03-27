@@ -5,13 +5,16 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: claude/market-brief-generator-3Q0s0
       - uses: actions/setup-python@v5
         with:
           python-version: "3.11"
       - run: pip install yfinance
-      - name: Verify all tickers
+      - name: Verify all tickers and save results
         run: |
-          python3 << 'EOF'
+          python3 << 'EOF' | tee ticker-results.txt
           import yfinance as yf
 
           tickers = {
@@ -25,15 +28,14 @@ jobs:
               "SPDR US Energy Select":             "SXLE.MI",
           }
 
-          # Also test Milan alternatives for Gold/Defense/HealthCare
           alt_tickers = {
               "Gold (Milan alt)":     "SGLN.MI",
               "Defense (Milan alt)":  "GUARD.MI",
               "Health (Milan alt)":   "ESIH.MI",
           }
 
-          print(f"{'Name':<35} {'Ticker':<12} {'Price':>10} {'Currency':<6} {'Status'}")
-          print("=" * 85)
+          print(f"{'Name':<35} {'Ticker':<12} {'Price':>10} {'Ccy':<5} {'Status'}")
+          print("=" * 75)
 
           for name, sym in {**tickers, **alt_tickers}.items():
               try:
@@ -42,9 +44,17 @@ jobs:
                   if len(h) > 0:
                       price = h['Close'].iloc[-1]
                       cur = t.info.get('currency', '???')
-                      print(f"{name:<35} {sym:<12} {price:>10.4f} {cur:<6} OK")
+                      print(f"{name:<35} {sym:<12} {price:>10.4f} {cur:<5} OK")
                   else:
-                      print(f"{name:<35} {sym:<12} {'':>10} {'':6} NO DATA")
+                      print(f"{name:<35} {sym:<12} {'N/A':>10} {'':5} NO DATA")
               except Exception as e:
-                  print(f"{name:<35} {sym:<12} {'':>10} {'':6} FAIL: {e}")
+                  err = str(e)[:30]
+                  print(f"{name:<35} {sym:<12} {'N/A':>10} {'':5} FAIL: {err}")
           EOF
+      - name: Commit results
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add ticker-results.txt
+          git commit -m "Ticker verification results [auto]" || echo "No changes"
+          git push
