@@ -1,0 +1,13 @@
+Name                                Ticker            Price Ccy   Status
+===========================================================================
+iShares Physical Gold ETC           PPFB.DE         73.8400 EUR   OK
+BNP Easy Europe Defense             GUARD.PA        10.8420 EUR   OK
+Amundi World Utilities              UTIW.MI         13.6500 EUR   OK
+iShares MSCI Korea                  CSKR.MI        293.2200 EUR   OK
+iShares Europe Health Care          ESIH.DE          6.8850 EUR   OK
+Vanguard FTSE All-World             VWCE.DE        142.9600 EUR   OK
+Netflix                             NFLX            93.3200 USD   OK
+SPDR US Energy Select               SXLE.MI         43.0150 EUR   OK
+Gold (Milan alt)                    SGLN.MI         73.8400 EUR   OK
+Defense (Milan alt)                 GUARD.MI        10.8340 EUR   OK
+Health (Milan alt)                  ESIH.MI             N/A       NO DATA
