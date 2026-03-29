@@ -84,7 +84,7 @@ jobs:
           server_port: 587
           username: ${{ secrets.GMAIL_USERNAME }}
           password: ${{ secrets.GMAIL_APP_PASSWORD }}
-          subject: "📊 Daily Market Brief — ${{ github.event.repository.name }}"
+          subject: "📊 Daily Market Brief"
           to: riccardococchi46@gmail.com
           from: ${{ secrets.GMAIL_USERNAME }}
           html_body: file://${{ steps.generate.outputs.report_path }}

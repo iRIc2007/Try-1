@@ -96,6 +96,6 @@ PORTFOLIO = [
 PORTFOLIO_BENCHMARK = {"name": "MSCI World", "ticker": "VWCE.DE"}
 
 # ─── Report Settings ────────────────────────────────────────────────────────
-MIN_HEADLINES = 6           # Minimum headlines (highest-signal only)
-MAX_HEADLINES = 10          # Maximum headlines if space allows
+MIN_HEADLINES = 6           # Exact headline count
+MAX_HEADLINES = 6           # Exact headline count
 REPORT_DIR = "reports"      # Folder where HTML reports are saved

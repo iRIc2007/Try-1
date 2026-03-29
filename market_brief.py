@@ -1215,7 +1215,7 @@ def demo_news():
         a["priority"] = _headline_priority(a)
         items.append(a)
     items.sort(key=lambda a: (a["priority"], -(a["published"] or datetime.min).timestamp() if a["published"] else 0))
-    return items
+    return items[:config.MAX_HEADLINES]
 
 
 def demo_summary():
