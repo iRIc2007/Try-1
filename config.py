@@ -78,6 +78,23 @@ RSS_FEEDS = [
     ("MarketWatch",    "https://feeds.marketwatch.com/marketwatch/topstories/"),
 ]
 
+# ─── Portfolio Positions ───────────────────────────────────────────────────
+# Each position: ticker, shares held, average cost (in native currency).
+# NFLX is in USD — will be converted to EUR at runtime using EUR/USD rate.
+PORTFOLIO = [
+    {"ticker": "PPFB.DE",  "name": "iShares Physical Gold",     "shares": 20,  "avg_cost": 86.2075, "currency": "EUR"},
+    {"ticker": "GUARD.PA", "name": "BNP Europe Defense",         "shares": 60,  "avg_cost": 12.185,  "currency": "EUR"},
+    {"ticker": "UTIW.MI",  "name": "Amundi World Utilities",     "shares": 100, "avg_cost": 13.885,  "currency": "EUR"},
+    {"ticker": "CSKR.MI",  "name": "iShares MSCI Korea",         "shares": 4,   "avg_cost": 312.50,  "currency": "EUR"},
+    {"ticker": "ESIH.DE",  "name": "iShares Europe Health Care", "shares": 120, "avg_cost": 7.5415,  "currency": "EUR"},
+    {"ticker": "VWCE.DE",  "name": "Vanguard FTSE All-World",    "shares": 95,  "avg_cost": 147.61,  "currency": "EUR"},
+    {"ticker": "NFLX",     "name": "Netflix",                    "shares": 10,  "avg_cost": 83.00831,"currency": "USD"},
+    {"ticker": "SXLE.MI",  "name": "SPDR US Energy Select",      "shares": 10,  "avg_cost": 32.21,   "currency": "EUR"},
+]
+
+# Benchmark for portfolio comparison
+PORTFOLIO_BENCHMARK = {"name": "MSCI World", "ticker": "VWCE.DE"}
+
 # ─── Report Settings ────────────────────────────────────────────────────────
 MAX_HEADLINES = 10          # How many news headlines to show
 REPORT_DIR = "reports"      # Folder where HTML reports are saved

@@ -134,6 +134,111 @@ def fetch_macro() -> list[dict]:
     return results
 
 
+def fetch_portfolio(news: list[dict] | None = None) -> dict:
+    """Fetch live portfolio data: positions, P&L, benchmark comparison.
+
+    Returns dict with keys: positions, total_value, today_pnl, today_pnl_pct,
+    total_return, total_return_pct, benchmark_change, winners, losers.
+    All monetary values in EUR.
+    """
+    print("Fetching portfolio data...")
+
+    # Get EUR/USD rate for NFLX conversion
+    eur_usd_rate = 1.0
+    fx_quote = fetch_quote("EURUSD=X")
+    if fx_quote:
+        eur_usd_rate = fx_quote["price"]
+        print(f"  EUR/USD rate: {eur_usd_rate:.4f}")
+
+    # Fetch benchmark daily change
+    bench_quote = fetch_quote(config.PORTFOLIO_BENCHMARK["ticker"])
+    benchmark_change = bench_quote["change_pct"] if bench_quote else 0.0
+
+    positions = []
+    total_value = 0.0
+    total_cost = 0.0
+    today_pnl = 0.0
+
+    for pos in config.PORTFOLIO:
+        q = fetch_quote(pos["ticker"])
+        if not q:
+            print(f"  ⚠ Could not fetch portfolio position: {pos['ticker']}")
+            continue
+
+        price_eur = q["price"]
+        avg_cost_eur = pos["avg_cost"]
+
+        # Convert USD positions to EUR
+        if pos["currency"] == "USD" and eur_usd_rate > 0:
+            price_eur = q["price"] / eur_usd_rate
+            avg_cost_eur = pos["avg_cost"] / eur_usd_rate
+
+        market_value = price_eur * pos["shares"]
+        cost_basis = avg_cost_eur * pos["shares"]
+        pos_total_return = market_value - cost_basis
+        pos_total_return_pct = ((price_eur - avg_cost_eur) / avg_cost_eur) * 100
+
+        # Today's P&L: change_pct applied to previous close value
+        prev_price_eur = price_eur / (1 + q["change_pct"] / 100)
+        pos_today_pnl = (price_eur - prev_price_eur) * pos["shares"]
+
+        positions.append({
+            "name": pos["name"],
+            "ticker": pos["ticker"],
+            "price_eur": price_eur,
+            "change_pct": q["change_pct"],
+            "today_pnl": pos_today_pnl,
+            "total_return_pct": pos_total_return_pct,
+            "market_value": market_value,
+        })
+
+        total_value += market_value
+        total_cost += cost_basis
+        today_pnl += pos_today_pnl
+
+    # Sort by today P&L descending
+    positions.sort(key=lambda p: p["today_pnl"], reverse=True)
+
+    total_return = total_value - total_cost
+    today_pnl_pct = (today_pnl / (total_value - today_pnl)) * 100 if total_value > today_pnl else 0
+    total_return_pct = (total_return / total_cost) * 100 if total_cost > 0 else 0
+
+    # Top 2 winners and losers with headline matching
+    winners = positions[:2] if len(positions) >= 2 else positions
+    losers = positions[-2:][::-1] if len(positions) >= 2 else []
+    # Reverse losers so worst is first
+    if len(losers) == 2 and losers[0]["today_pnl"] > losers[1]["today_pnl"]:
+        losers = losers[::-1]
+
+    # Match headlines to movers
+    def _match_headline(ticker, name, articles):
+        if not articles:
+            return None
+        name_words = [w.lower() for w in name.split() if len(w) > 3]
+        tk_lower = ticker.lower().split(".")[0]  # e.g. "PPFB" from "PPFB.DE"
+        for a in articles:
+            title_lower = a["title"].lower()
+            if tk_lower in title_lower or any(w in title_lower for w in name_words):
+                return a["title"]
+        return None
+
+    for mover in winners + losers:
+        mover["headline"] = _match_headline(mover["ticker"], mover["name"], news)
+
+    return {
+        "positions": positions,
+        "total_value": total_value,
+        "today_pnl": today_pnl,
+        "today_pnl_pct": today_pnl_pct,
+        "total_return": total_return,
+        "total_return_pct": total_return_pct,
+        "benchmark_change": benchmark_change,
+        "benchmark_name": config.PORTFOLIO_BENCHMARK["name"],
+        "winners": winners,
+        "losers": losers,
+    }
+
+
 def _fetch_one_feed(source_name: str, url: str) -> list[dict]:
     """Fetch a single RSS feed with a requests timeout, return article list."""
     resp = requests.get(url, timeout=FETCH_TIMEOUT)
@@ -593,6 +698,103 @@ HTML_TEMPLATE = Template("""\
   </div>
   {% endif %}
 
+  {# ══ 5. PORTFOLIO ══ #}
+  {% if portfolio %}
+  {% set pf_color = '#00c853' if portfolio.today_pnl >= 0 else '#ff3d3d' %}
+  {% set pf_bg    = 'rgba(0,200,83,0.08)' if portfolio.today_pnl >= 0 else 'rgba(255,61,61,0.08)' %}
+  {% set tr_color = '#00c853' if portfolio.total_return >= 0 else '#ff3d3d' %}
+  <div style="{{ S_CARD }}border-top:4px solid {{ pf_color }};">
+    <h2 style="{{ S_H2 }}">Portfolio</h2>
+
+    {# ── Summary banner ── #}
+    <div style="background:{{ pf_bg }};border:1px solid {{ pf_color }}44;border-radius:10px;padding:20px 24px;margin-bottom:20px;">
+      <table style="width:100%;border-collapse:collapse;">
+        <tr>
+          <td style="text-align:center;padding:8px 12px;">
+            <div style="font-size:11px;font-weight:700;color:#64748b;text-transform:uppercase;letter-spacing:1px;">Total Value</div>
+            <div style="font-size:24px;font-weight:800;color:#ffffff;margin-top:4px;">&euro;{{ "{:,.2f}".format(portfolio.total_value) }}</div>
+          </td>
+          <td style="text-align:center;padding:8px 12px;">
+            <div style="font-size:11px;font-weight:700;color:#64748b;text-transform:uppercase;letter-spacing:1px;">Today P&amp;L</div>
+            <div style="font-size:24px;font-weight:800;color:{{ pf_color }};margin-top:4px;">{{ "{:+,.2f}".format(portfolio.today_pnl) }}&euro;</div>
+            <div style="font-size:13px;font-weight:700;color:{{ pf_color }};">({{ "{:+.2f}".format(portfolio.today_pnl_pct) }}%)</div>
+          </td>
+          <td style="text-align:center;padding:8px 12px;">
+            <div style="font-size:11px;font-weight:700;color:#64748b;text-transform:uppercase;letter-spacing:1px;">Total Return</div>
+            <div style="font-size:24px;font-weight:800;color:{{ tr_color }};margin-top:4px;">{{ "{:+,.2f}".format(portfolio.total_return) }}&euro;</div>
+            <div style="font-size:13px;font-weight:700;color:{{ tr_color }};">({{ "{:+.2f}".format(portfolio.total_return_pct) }}%)</div>
+          </td>
+        </tr>
+      </table>
+    </div>
+
+    {# ── Position table ── #}
+    <table style="width:100%;border-collapse:collapse;font-size:13px;margin-bottom:20px;">
+      <thead>
+        <tr>
+          <th style="{{ S_TH }}">Name</th>
+          <th style="{{ S_TH }}">Ticker</th>
+          <th style="{{ S_TH }}">Price &euro;</th>
+          <th style="{{ S_TH }}">Day %</th>
+          <th class="hide-mobile" style="{{ S_TH }}">Today P&amp;L</th>
+          <th style="{{ S_TH }}">Total Ret %</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for p in portfolio.positions %}
+        {% set dc = '#00c853' if p.change_pct > 0 else ('#ff3d3d' if p.change_pct < 0 else '#94a3b8') %}
+        {% set tc = '#00c853' if p.total_return_pct > 0 else ('#ff3d3d' if p.total_return_pct < 0 else '#94a3b8') %}
+        {% set pc = '#00c853' if p.today_pnl > 0 else ('#ff3d3d' if p.today_pnl < 0 else '#94a3b8') %}
+        {% set zebra = '#111d33' if loop.index is odd else 'transparent' %}
+        {% set td_b = S_TD if not loop.last else S_TD_END %}
+        <tr style="background:{{ zebra }};">
+          <td style="{{ td_b }}"><strong style="color:#ffffff;">{{ p.name }}</strong></td>
+          <td style="{{ td_b }}color:#94a3b8;font-size:12px;">{{ p.ticker }}</td>
+          <td style="{{ td_b }}">&euro;{{ "{:,.2f}".format(p.price_eur) }}</td>
+          <td style="{{ td_b }}color:{{ dc }};font-weight:700;">{{ "{:+.2f}".format(p.change_pct) }}%</td>
+          <td class="hide-mobile" style="{{ td_b }}color:{{ pc }};font-weight:700;">{{ "{:+,.2f}".format(p.today_pnl) }}&euro;</td>
+          <td style="{{ td_b }}color:{{ tc }};font-weight:700;">{{ "{:+.2f}".format(p.total_return_pct) }}%</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+
+    {# ── Top Movers with headlines ── #}
+    {% if portfolio.winners or portfolio.losers %}
+    <div style="margin-bottom:16px;">
+      <div style="font-size:13px;font-weight:700;color:#00c853;text-transform:uppercase;letter-spacing:1px;margin-bottom:8px;">&#9650; Top Winners</div>
+      {% for w in portfolio.winners %}
+      <div style="padding:10px 14px;margin-bottom:6px;border-radius:8px;background:rgba(0,200,83,0.06);border-left:4px solid #00c853;">
+        <span style="font-weight:800;color:#ffffff;">{{ w.ticker }}</span>
+        <span style="color:#00c853;font-weight:700;margin-left:8px;">{{ "{:+.2f}".format(w.change_pct) }}%</span>
+        <span style="color:#00c853;margin-left:6px;">({{ "{:+,.2f}".format(w.today_pnl) }}&euro;)</span>
+        <div style="font-size:12px;color:#94a3b8;margin-top:4px;">Why it moved: {{ w.headline if w.headline else 'No specific news today' }}</div>
+      </div>
+      {% endfor %}
+
+      <div style="font-size:13px;font-weight:700;color:#ff3d3d;text-transform:uppercase;letter-spacing:1px;margin:14px 0 8px 0;">&#9660; Top Losers</div>
+      {% for l in portfolio.losers %}
+      <div style="padding:10px 14px;margin-bottom:6px;border-radius:8px;background:rgba(255,61,61,0.06);border-left:4px solid #ff3d3d;">
+        <span style="font-weight:800;color:#ffffff;">{{ l.ticker }}</span>
+        <span style="color:#ff3d3d;font-weight:700;margin-left:8px;">{{ "{:+.2f}".format(l.change_pct) }}%</span>
+        <span style="color:#ff3d3d;margin-left:6px;">({{ "{:+,.2f}".format(l.today_pnl) }}&euro;)</span>
+        <div style="font-size:12px;color:#94a3b8;margin-top:4px;">Why it moved: {{ l.headline if l.headline else 'No specific news today' }}</div>
+      </div>
+      {% endfor %}
+    </div>
+    {% endif %}
+
+    {# ── Benchmark one-liner ── #}
+    {% set my_color = '#00c853' if portfolio.today_pnl_pct >= 0 else '#ff3d3d' %}
+    {% set bm_color = '#00c853' if portfolio.benchmark_change >= 0 else '#ff3d3d' %}
+    <div style="text-align:center;padding:12px 16px;border-radius:8px;background:#111d33;font-size:14px;color:#e2e8f0;">
+      Your portfolio: <strong style="color:{{ my_color }};">{{ "{:+.2f}".format(portfolio.today_pnl_pct) }}%</strong>
+      &nbsp;vs&nbsp;
+      {{ portfolio.benchmark_name }}: <strong style="color:{{ bm_color }};">{{ "{:+.2f}".format(portfolio.benchmark_change) }}%</strong> today
+    </div>
+  </div>
+  {% endif %}
+
   {# ══ 6. MARKET OVERVIEW ══ #}
   <div style="{{ S_CARD }}">
     <h2 style="{{ S_H2 }}">Market Overview</h2>
@@ -920,6 +1122,41 @@ def demo_summary():
     return generate_summary(demo_indices(), demo_watchlist(), demo_macro())
 
 
+def demo_portfolio():
+    """Sample portfolio data for demo/preview mode."""
+    positions = [
+        {"name": "SPDR US Energy Select",      "ticker": "SXLE.MI",  "price_eur": 43.83, "change_pct":  2.51, "today_pnl":  10.74, "total_return_pct":  36.06, "market_value": 438.25},
+        {"name": "Netflix",                     "ticker": "NFLX",     "price_eur": 86.14, "change_pct":  1.82, "today_pnl":  15.38, "total_return_pct":  14.69, "market_value": 861.40},
+        {"name": "Amundi World Utilities",      "ticker": "UTIW.MI",  "price_eur": 13.76, "change_pct":  0.22, "today_pnl":   3.03, "total_return_pct":  -0.89, "market_value": 1376.20},
+        {"name": "Vanguard FTSE All-World",     "ticker": "VWCE.DE",  "price_eur": 141.00,"change_pct": -0.18, "today_pnl": -24.10, "total_return_pct":  -4.48, "market_value": 13395.00},
+        {"name": "iShares Europe Health Care",  "ticker": "ESIH.DE",  "price_eur":  6.91, "change_pct": -0.54, "today_pnl":  -4.48, "total_return_pct":  -8.41, "market_value": 828.84},
+        {"name": "iShares MSCI Korea",          "ticker": "CSKR.MI",  "price_eur": 291.17,"change_pct": -0.82, "today_pnl":  -9.59, "total_return_pct":  -6.83, "market_value": 1164.68},
+        {"name": "iShares Physical Gold",       "ticker": "PPFB.DE",  "price_eur": 76.13, "change_pct": -1.15, "today_pnl": -17.62, "total_return_pct": -11.69, "market_value": 1522.60},
+        {"name": "BNP Europe Defense",          "ticker": "GUARD.PA", "price_eur": 10.51, "change_pct": -2.10, "today_pnl": -13.27, "total_return_pct": -13.76, "market_value": 630.48},
+    ]
+    # Already sorted by today_pnl descending
+    winners = positions[:2]
+    losers = positions[-2:][::-1]
+    for m in winners + losers:
+        m["headline"] = None
+
+    total_value = sum(p["market_value"] for p in positions)
+    total_cost = 21051.56  # approximate from avg costs
+    today_pnl = sum(p["today_pnl"] for p in positions)
+    return {
+        "positions": positions,
+        "total_value": total_value,
+        "today_pnl": today_pnl,
+        "today_pnl_pct": (today_pnl / (total_value - today_pnl)) * 100,
+        "total_return": total_value - total_cost,
+        "total_return_pct": ((total_value - total_cost) / total_cost) * 100,
+        "benchmark_change": -0.18,
+        "benchmark_name": "MSCI World",
+        "winners": winners,
+        "losers": losers,
+    }
+
+
 # ═══════════════════════════════════════════════════════════════════════════════
 # 5. REPORT GENERATION
 # ═══════════════════════════════════════════════════════════════════════════════
@@ -943,6 +1180,7 @@ def generate_report():
         macro    = demo_macro()
         news     = demo_news()
         summary_data = demo_summary()
+        portfolio = demo_portfolio()
     else:
         # Fetch all data
         indices   = fetch_indices()
@@ -950,6 +1188,7 @@ def generate_report():
         macro     = fetch_macro()
         news      = fetch_news()
         summary_data = generate_summary(indices, watchlist, macro)
+        portfolio = fetch_portfolio(news)
 
     above_fold    = enrich_summary(summary_data["above_fold"])
     snapshot      = enrich_summary(summary_data["snapshot"])
@@ -977,6 +1216,7 @@ def generate_report():
         market_status=market_status,
         radar=radar,
         vix_alert=vix_alert,
+        portfolio=portfolio,
     )
 
     # Save to reports/ folder
