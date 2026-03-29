@@ -260,25 +260,25 @@ def _fetch_one_feed(source_name: str, url: str) -> list[dict]:
 # ─── Portfolio headline matching ─────────────────────────────────────────────
 
 _PORTFOLIO_TAGS = [
-    {"keywords": ["gold", "precious metal", "bullion"],
+    {"keywords": ["gold", "precious metal", "bullion", "gold price", "gold etf", "gold etp"],
      "label": "🥇 Gold",    "color": "#f59e0b", "bg": "rgba(245,158,11,0.18)"},
-    {"keywords": ["defense", "defence", "military", "nato", "arms", "europe defense"],
+    {"keywords": ["defense", "defence", "military", "nato", "arms", "europe defense", "weapon", "missile", "lockheed", "rheinmetall", "bae systems"],
      "label": "🛡️ Defense", "color": "#a855f7", "bg": "rgba(168,85,247,0.18)"},
-    {"keywords": ["utilities", "utility", "power grid", "renewable energy", "electricity"],
+    {"keywords": ["utilities", "utility", "power grid", "renewable energy", "electricity", "solar", "wind farm", "clean energy", "nuclear power"],
      "label": "⚡ Utilities","color": "#10b981", "bg": "rgba(16,185,129,0.18)"},
-    {"keywords": ["korea", "korean", "samsung", "hyundai", "sk hynix"],
+    {"keywords": ["korea", "korean", "samsung", "hyundai", "sk hynix", "seoul", "kospi"],
      "label": "🇰🇷 Korea",  "color": "#3b82f6", "bg": "rgba(59,130,246,0.18)"},
-    {"keywords": ["healthcare", "health care", "pharma", "biotech", "medical", "drug", "fda"],
+    {"keywords": ["healthcare", "health care", "pharma", "biotech", "medical", "drug", "fda", "hospital", "patient", "clinical trial"],
      "label": "💊 Healthcare","color": "#00c853", "bg": "rgba(0,200,83,0.18)"},
-    {"keywords": ["vanguard", "msci world", "ftse all-world", "global equity", "world index"],
+    {"keywords": ["vanguard", "msci world", "ftse all-world", "global equity", "world index", "passive investing", "index fund"],
      "label": "🌍 All-World","color": "#4fc3f7", "bg": "rgba(79,195,247,0.18)"},
-    {"keywords": ["netflix", "nflx", "streaming wars"],
+    {"keywords": ["netflix", "nflx", "streaming wars", "streaming service"],
      "label": "🎬 Netflix", "color": "#e50914", "bg": "rgba(229,9,20,0.18)"},
-    {"keywords": ["energy sector", "oil sector", "energy select", "energy etf", "crude", "oil price", "opec"],
+    {"keywords": ["oil", "gas", "crude", "opec", "energy sector", "energy select", "energy etf", "oil price", "barrel", "petroleum", "lng", "pipeline", "refiner"],
      "label": "🛢️ Energy",  "color": "#f97316", "bg": "rgba(249,115,22,0.18)"},
     {"keywords": ["ishares", "blackrock etf"],
      "label": "📊 iShares", "color": "#94a3b8", "bg": "rgba(148,163,184,0.18)"},
-    {"keywords": [" etf ", "exchange-traded", "etf inflow", "etf outflow"],
+    {"keywords": ["etfs", "etf ", " etf", "exchange-traded", "etf inflow", "etf outflow"],
      "label": "📊 ETF",     "color": "#94a3b8", "bg": "rgba(148,163,184,0.18)"},
 ]
 
@@ -324,35 +324,44 @@ def fetch_news() -> list[dict]:
     if len(relevant) < config.MAX_HEADLINES:
         relevant = unique
 
-    # Tag each headline with portfolio badge (if applicable)
-    for a in relevant:
+    # Tag ALL unique headlines with portfolio badge (search broad pool)
+    for a in unique:
         a["portfolio_badge"] = _match_portfolio_tag(a["title"])
 
     # Guarantee at least 3 portfolio-relevant headlines
-    portfolio_hits = [a for a in relevant if a["portfolio_badge"]]
-    general_pool = [a for a in relevant if not a["portfolio_badge"]]
-
     min_portfolio = 3
     max_total = config.MAX_HEADLINES
 
-    if len(portfolio_hits) >= min_portfolio:
-        # Enough portfolio headlines — pick top 3, fill rest from general
-        selected_portfolio = portfolio_hits[:min_portfolio]
-        # Remaining slots filled from general + leftover portfolio
-        remaining_pool = general_pool + portfolio_hits[min_portfolio:]
-        remaining_pool.sort(key=lambda a: a["published"] or datetime.min, reverse=True)
-        final = selected_portfolio + remaining_pool[: max_total - min_portfolio]
-    else:
-        # Fewer than 3 portfolio headlines — take all we have, fill rest general
-        selected_portfolio = portfolio_hits
-        slots_left = max_total - len(selected_portfolio)
-        final = selected_portfolio + general_pool[:slots_left]
+    # Collect portfolio hits from the full pool (not just market-relevant)
+    portfolio_hits_all = [a for a in unique if a["portfolio_badge"]]
+    # Deduplicate: prefer ones already in relevant list
+    relevant_titles = {a["title"].lower()[:80] for a in relevant}
+    portfolio_in_relevant = [a for a in relevant if a["portfolio_badge"]]
+    portfolio_extra = [a for a in portfolio_hits_all
+                       if a["title"].lower()[:80] not in relevant_titles]
+
+    # Build portfolio selection: first from relevant, then extras
+    selected_portfolio = portfolio_in_relevant[:min_portfolio]
+    if len(selected_portfolio) < min_portfolio:
+        needed = min_portfolio - len(selected_portfolio)
+        selected_portfolio += portfolio_extra[:needed]
+
+    # General pool: relevant headlines without portfolio badge
+    general_pool = [a for a in relevant if not a["portfolio_badge"]]
+
+    # Combine: portfolio picks first, then fill remaining with general + leftover portfolio
+    selected_titles = {a["title"].lower()[:80] for a in selected_portfolio}
+    remaining = [a for a in relevant if a["title"].lower()[:80] not in selected_titles]
+    remaining.sort(key=lambda a: a["published"] or datetime.min, reverse=True)
+
+    final = selected_portfolio + remaining[: max_total - len(selected_portfolio)]
 
     # Re-sort final list: portfolio headlines first, then by date
     final.sort(key=lambda a: (0 if a["portfolio_badge"] else 1, -(a["published"] or datetime.min).timestamp() if a["published"] else 0))
 
-    print(f"  Headlines: {len([a for a in final if a['portfolio_badge']])} portfolio-relevant, "
-          f"{len([a for a in final if not a['portfolio_badge']])} general")
+    pf_count = len([a for a in final if a["portfolio_badge"]])
+    print(f"  Headlines: {pf_count} portfolio-relevant, "
+          f"{len(final) - pf_count} general")
     return final
 
 
