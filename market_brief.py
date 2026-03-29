@@ -257,8 +257,46 @@ def _fetch_one_feed(source_name: str, url: str) -> list[dict]:
     return items
 
 
+# ─── Portfolio headline matching ─────────────────────────────────────────────
+
+_PORTFOLIO_TAGS = [
+    {"keywords": ["gold", "precious metal", "bullion"],
+     "label": "🥇 Gold",    "color": "#f59e0b", "bg": "rgba(245,158,11,0.18)"},
+    {"keywords": ["defense", "defence", "military", "nato", "arms", "europe defense"],
+     "label": "🛡️ Defense", "color": "#a855f7", "bg": "rgba(168,85,247,0.18)"},
+    {"keywords": ["utilities", "utility", "power grid", "renewable energy", "electricity"],
+     "label": "⚡ Utilities","color": "#10b981", "bg": "rgba(16,185,129,0.18)"},
+    {"keywords": ["korea", "korean", "samsung", "hyundai", "sk hynix"],
+     "label": "🇰🇷 Korea",  "color": "#3b82f6", "bg": "rgba(59,130,246,0.18)"},
+    {"keywords": ["healthcare", "health care", "pharma", "biotech", "medical", "drug", "fda"],
+     "label": "💊 Healthcare","color": "#00c853", "bg": "rgba(0,200,83,0.18)"},
+    {"keywords": ["vanguard", "msci world", "ftse all-world", "global equity", "world index"],
+     "label": "🌍 All-World","color": "#4fc3f7", "bg": "rgba(79,195,247,0.18)"},
+    {"keywords": ["netflix", "nflx", "streaming wars"],
+     "label": "🎬 Netflix", "color": "#e50914", "bg": "rgba(229,9,20,0.18)"},
+    {"keywords": ["energy sector", "oil sector", "energy select", "energy etf", "crude", "oil price", "opec"],
+     "label": "🛢️ Energy",  "color": "#f97316", "bg": "rgba(249,115,22,0.18)"},
+    {"keywords": ["ishares", "blackrock etf"],
+     "label": "📊 iShares", "color": "#94a3b8", "bg": "rgba(148,163,184,0.18)"},
+    {"keywords": [" etf ", "exchange-traded", "etf inflow", "etf outflow"],
+     "label": "📊 ETF",     "color": "#94a3b8", "bg": "rgba(148,163,184,0.18)"},
+]
+
+
+def _match_portfolio_tag(title: str) -> dict | None:
+    """Return the first matching portfolio badge for a headline, or None."""
+    low = title.lower()
+    for tag in _PORTFOLIO_TAGS:
+        if any(kw in low for kw in tag["keywords"]):
+            return {"label": tag["label"], "color": tag["color"], "bg": tag["bg"]}
+    return None
+
+
 def fetch_news() -> list[dict]:
-    """Fetch headlines from RSS feeds — each feed gets a 30s timeout."""
+    """Fetch headlines from RSS feeds — each feed gets a 30s timeout.
+
+    Guarantees at least 3 portfolio-relevant headlines in the final 10.
+    """
     print("Fetching news headlines...")
     articles = []
     for source_name, url in config.RSS_FEEDS:
@@ -283,10 +321,39 @@ def fetch_news() -> list[dict]:
 
     # Filter: keep only market-relevant headlines
     relevant = [a for a in unique if _is_market_relevant(a["title"])]
-    # Fall back to unfiltered if too few pass the filter
     if len(relevant) < config.MAX_HEADLINES:
         relevant = unique
-    return relevant[: config.MAX_HEADLINES]
+
+    # Tag each headline with portfolio badge (if applicable)
+    for a in relevant:
+        a["portfolio_badge"] = _match_portfolio_tag(a["title"])
+
+    # Guarantee at least 3 portfolio-relevant headlines
+    portfolio_hits = [a for a in relevant if a["portfolio_badge"]]
+    general_pool = [a for a in relevant if not a["portfolio_badge"]]
+
+    min_portfolio = 3
+    max_total = config.MAX_HEADLINES
+
+    if len(portfolio_hits) >= min_portfolio:
+        # Enough portfolio headlines — pick top 3, fill rest from general
+        selected_portfolio = portfolio_hits[:min_portfolio]
+        # Remaining slots filled from general + leftover portfolio
+        remaining_pool = general_pool + portfolio_hits[min_portfolio:]
+        remaining_pool.sort(key=lambda a: a["published"] or datetime.min, reverse=True)
+        final = selected_portfolio + remaining_pool[: max_total - min_portfolio]
+    else:
+        # Fewer than 3 portfolio headlines — take all we have, fill rest general
+        selected_portfolio = portfolio_hits
+        slots_left = max_total - len(selected_portfolio)
+        final = selected_portfolio + general_pool[:slots_left]
+
+    # Re-sort final list: portfolio headlines first, then by date
+    final.sort(key=lambda a: (0 if a["portfolio_badge"] else 1, -(a["published"] or datetime.min).timestamp() if a["published"] else 0))
+
+    print(f"  Headlines: {len([a for a in final if a['portfolio_badge']])} portfolio-relevant, "
+          f"{len([a for a in final if not a['portfolio_badge']])} general")
+    return final
 
 
 # ─── Keywords for market-relevant headline filtering ──────────────────────────
@@ -950,7 +1017,10 @@ HTML_TEMPLATE = Template("""\
       <div style="margin-bottom:5px;">
         <span style="display:inline-block;padding:2px 7px;border-radius:4px;font-size:10px;font-weight:700;letter-spacing:0.4px;color:{{ n.badge.color }};background:{{ n.badge.bg }};margin-right:6px;">{{ n.badge.label }}</span>
         {% if n.category %}
-        <span style="display:inline-block;padding:2px 7px;border-radius:4px;font-size:10px;font-weight:700;letter-spacing:0.4px;color:{{ n.cat_color }};background:{{ n.cat_bg }};">[{{ n.category }}]</span>
+        <span style="display:inline-block;padding:2px 7px;border-radius:4px;font-size:10px;font-weight:700;letter-spacing:0.4px;color:{{ n.cat_color }};background:{{ n.cat_bg }};margin-right:6px;">[{{ n.category }}]</span>
+        {% endif %}
+        {% if n.portfolio_badge %}
+        <span style="display:inline-block;padding:2px 8px;border-radius:4px;font-size:10px;font-weight:700;letter-spacing:0.4px;color:{{ n.portfolio_badge.color }};background:{{ n.portfolio_badge.bg }};border:1px solid {{ n.portfolio_badge.color }}44;">{{ n.portfolio_badge.label }}</span>
         {% endif %}
       </div>
       <a href="{{ n.link }}" target="_blank" style="color:#e2e8f0;text-decoration:none;font-size:14px;font-weight:500;line-height:1.5;">{{ n.title }}</a>
@@ -1095,27 +1165,33 @@ def demo_macro():
 
 def demo_news():
     headlines = [
+        # Portfolio-relevant (guaranteed slots)
+        ("Gold Hits Fresh Record Above $3,000 on Central Bank Buying Spree", "MarketWatch"),
+        ("Netflix Subscriber Growth Beats Estimates, Shares Jump 4%", "CNBC Top News"),
+        ("Europe Defense Stocks Surge as NATO Boosts Spending Commitments", "Reuters Business"),
+        # General market headlines
         ("Fed Officials Signal Patience on Rate Cuts Amid Sticky Inflation Data", "Reuters Business"),
         ("NVIDIA Surges 3.5% as New AI Chip Orders Exceed Expectations", "CNBC Top News"),
-        ("Gold Hits Fresh Record Above $3,000 on Central Bank Buying Spree", "MarketWatch"),
-        ("Tesla Unveils Affordable Model Q Targeting $25,000 Price Point", "Yahoo Finance"),
         ("Bitcoin Tops $87,000 as Institutional ETF Inflows Accelerate", "CNBC Top News"),
         ("U.S. Manufacturing PMI Surprises to Upside, Signals Recovery", "MarketWatch"),
         ("China Cuts Reserve Requirement Ratio to Boost Slowing Economy", "Reuters Business"),
         ("Goldman Sachs Raises S&P 500 Year-End Target to 6,200", "CNBC Top News"),
         ("Oil Slips Below $69 on Demand Concerns Despite OPEC+ Cuts", "MarketWatch"),
-        ("European Central Bank Holds Rates Steady, Signals June Cut", "Reuters Business"),
     ]
     now = datetime.now()
-    return [
+    items = [
         {
             "title": title,
             "link": "#",
             "source": source,
             "published": now - timedelta(hours=i, minutes=random.randint(0, 59)),
+            "portfolio_badge": _match_portfolio_tag(title),
         }
         for i, (title, source) in enumerate(headlines)
     ]
+    # Sort: portfolio-relevant first, then by date
+    items.sort(key=lambda a: (0 if a["portfolio_badge"] else 1, -(a["published"] or datetime.min).timestamp() if a["published"] else 0))
+    return items
 
 
 def demo_summary():
