@@ -293,9 +293,13 @@ def _match_portfolio_tag(title: str) -> dict | None:
 
 
 def fetch_news() -> list[dict]:
-    """Fetch headlines from RSS feeds — each feed gets a 30s timeout.
+    """Fetch headlines from RSS feeds with 3-tier priority selection.
 
-    Guarantees at least 3 portfolio-relevant headlines in the final 10.
+    Priority 1: Portfolio holdings / sectors (Gold, Defense, Energy, Netflix…)
+    Priority 2: Major macro (Fed, ECB, inflation, rates, recession, geopolitics)
+    Priority 3: Broad market-moving (earnings, index moves, sector rotations)
+
+    Returns between MIN_HEADLINES (6) and MAX_HEADLINES (10).
     """
     print("Fetching news headlines...")
     articles = []
@@ -319,91 +323,95 @@ def fetch_news() -> list[dict]:
             unique.append(a)
     unique.sort(key=lambda a: a["published"] or datetime.min, reverse=True)
 
-    # Filter: keep only market-relevant headlines
-    relevant = [a for a in unique if _is_market_relevant(a["title"])]
-    if len(relevant) < config.MAX_HEADLINES:
-        relevant = unique
+    # Exclude junk headlines
+    filtered = [a for a in unique if not _is_excluded(a["title"])]
 
-    # Tag ALL unique headlines with portfolio badge (search broad pool)
-    for a in unique:
+    # Tag every headline with portfolio badge + priority tier
+    for a in filtered:
         a["portfolio_badge"] = _match_portfolio_tag(a["title"])
+        a["priority"] = _headline_priority(a)
 
-    # Guarantee at least 3 portfolio-relevant headlines
-    min_portfolio = 3
-    max_total = config.MAX_HEADLINES
+    # Sort by priority (1 best), then newest first
+    filtered.sort(key=lambda a: (a["priority"], -(a["published"] or datetime.min).timestamp() if a["published"] else 0))
 
-    # Collect portfolio hits from the full pool (not just market-relevant)
-    portfolio_hits_all = [a for a in unique if a["portfolio_badge"]]
-    # Deduplicate: prefer ones already in relevant list
-    relevant_titles = {a["title"].lower()[:80] for a in relevant}
-    portfolio_in_relevant = [a for a in relevant if a["portfolio_badge"]]
-    portfolio_extra = [a for a in portfolio_hits_all
-                       if a["title"].lower()[:80] not in relevant_titles]
+    # Take up to MAX_HEADLINES, but at least MIN_HEADLINES
+    final = filtered[: config.MAX_HEADLINES]
+    if len(final) < config.MIN_HEADLINES:
+        # Fall back to unfiltered pool if we lack headlines
+        for a in unique:
+            if a not in final:
+                a["portfolio_badge"] = a.get("portfolio_badge") or _match_portfolio_tag(a["title"])
+                a["priority"] = a.get("priority") or _headline_priority(a)
+                final.append(a)
+            if len(final) >= config.MIN_HEADLINES:
+                break
 
-    # Build portfolio selection: first from relevant, then extras
-    selected_portfolio = portfolio_in_relevant[:min_portfolio]
-    if len(selected_portfolio) < min_portfolio:
-        needed = min_portfolio - len(selected_portfolio)
-        selected_portfolio += portfolio_extra[:needed]
+    # Final sort: portfolio first, then macro, then market, within each group by date
+    final.sort(key=lambda a: (a["priority"], -(a["published"] or datetime.min).timestamp() if a["published"] else 0))
 
-    # General pool: relevant headlines without portfolio badge
-    general_pool = [a for a in relevant if not a["portfolio_badge"]]
-
-    # Combine: portfolio picks first, then fill remaining with general + leftover portfolio
-    selected_titles = {a["title"].lower()[:80] for a in selected_portfolio}
-    remaining = [a for a in relevant if a["title"].lower()[:80] not in selected_titles]
-    remaining.sort(key=lambda a: a["published"] or datetime.min, reverse=True)
-
-    final = selected_portfolio + remaining[: max_total - len(selected_portfolio)]
-
-    # Re-sort final list: portfolio headlines first, then by date
-    final.sort(key=lambda a: (0 if a["portfolio_badge"] else 1, -(a["published"] or datetime.min).timestamp() if a["published"] else 0))
-
-    pf_count = len([a for a in final if a["portfolio_badge"]])
-    print(f"  Headlines: {pf_count} portfolio-relevant, "
-          f"{len(final) - pf_count} general")
+    p1 = len([a for a in final if a["priority"] == 1])
+    p2 = len([a for a in final if a["priority"] == 2])
+    p3 = len([a for a in final if a["priority"] == 3])
+    print(f"  Headlines: {len(final)} total — {p1} portfolio, {p2} macro, {p3} market")
     return final
 
 
-# ─── Keywords for market-relevant headline filtering ──────────────────────────
-
-_RELEVANT_KEYWORDS = [
-    # Markets & indices
-    "s&p", "nasdaq", "dow", "stock", "shares", "equit", "rally", "selloff",
-    "bull", "bear", "futures", "index", "market",
-    # Earnings & corporate
-    "earnings", "revenue", "profit", "quarterly", "guidance", "ipo", "merger",
-    "acquisition", "buyback", "dividend", "ceo", "layoff", "restructur",
-    # Macro & central banks
-    "fed ", "federal reserve", "rate cut", "rate hike", "inflation", "cpi",
-    "ppi", "gdp", "payroll", "jobs", "unemployment", "pmi", "treasury",
-    "yield", "central bank", "ecb", "boj", "boe", "monetary", "fiscal",
-    "tariff", "trade", "deficit", "surplus", "recession",
-    # Commodities & FX
-    "oil", "crude", "gold", "silver", "copper", "natural gas", "commodity",
-    "dollar", "euro", "yen", "forex", "currency", "bitcoin", "crypto",
-    # Geopolitics
-    "sanction", "war", "geopolit", "nato", "opec", "china", "russia",
-    "ukraine", "middle east", "iran", "taiwan",
-    # Sectors
-    "bank", "financ", "tech", "semiconductor", "chip", "energy", "pharma",
-    "biotech", "fda", "drug", "ai ", "artificial intelligence",
-]
+# ─── Headline exclusion filter ────────────────────────────────────────────────
 
 _EXCLUDE_KEYWORDS = [
+    # Lifestyle / personal
     "lifestyle", "recipe", "best credit card", "personal finance tips",
     "how to save", "retirement plan", "opinion:", "editorial:", "review:",
     "travel", "celebrity", "entertainment", "horoscope", "wellness",
     "self-care", "dating", "relationship", "diet", "fitness tip",
+    # Real estate
+    "real estate", "mortgage rate", "home price", "housing market",
+    "rent ", "landlord", "homebuyer", "down payment", "property tax",
+    # Crypto (unless Bitcoin major move — handled in priority logic)
+    "altcoin", "memecoin", "dogecoin", "shiba", "solana", "cardano",
+    "nft ", "defi ", "airdrop", "token launch",
 ]
 
 
-def _is_market_relevant(title: str) -> bool:
-    """Return True if the headline is about markets, earnings, macro, or geopolitics."""
+def _is_excluded(title: str) -> bool:
+    """Return True if the headline should be excluded entirely."""
     low = title.lower()
-    if any(kw in low for kw in _EXCLUDE_KEYWORDS):
-        return False
-    return any(kw in low for kw in _RELEVANT_KEYWORDS)
+    return any(kw in low for kw in _EXCLUDE_KEYWORDS)
+
+
+# ─── Headline priority tiers ─────────────────────────────────────────────────
+
+_MACRO_KEYWORDS = [
+    "fed ", "federal reserve", "rate cut", "rate hike", "interest rate",
+    "inflation", "cpi", "ppi", "gdp", "recession", "central bank",
+    "ecb", "boj", "boe", "monetary policy", "fiscal", "treasury",
+    "yield", "dollar", "dxy", "payroll", "jobs report", "unemployment",
+    "tariff", "trade war", "sanction", "geopolit", "war ", "nato",
+    "china", "russia", "ukraine", "middle east", "iran", "taiwan",
+    "opec", "oil shock",
+]
+
+_MARKET_KEYWORDS = [
+    "s&p", "nasdaq", "dow", "stock", "shares", "equit", "rally", "selloff",
+    "bull", "bear", "futures", "index", "market",
+    "earnings", "revenue", "profit", "quarterly", "guidance", "ipo", "merger",
+    "acquisition", "buyback", "dividend", "ceo", "layoff", "restructur",
+    "sector", "rotation", "bank", "financ", "tech", "semiconductor", "chip",
+    "energy", "pharma", "biotech", "fda", "drug", "ai ", "artificial intelligence",
+    "bitcoin", "crypto", "gold", "silver", "copper", "commodity",
+]
+
+
+def _headline_priority(article: dict) -> int:
+    """Assign priority tier: 1 = portfolio, 2 = macro, 3 = market, 9 = other."""
+    if article.get("portfolio_badge"):
+        return 1
+    low = article["title"].lower()
+    if any(kw in low for kw in _MACRO_KEYWORDS):
+        return 2
+    if any(kw in low for kw in _MARKET_KEYWORDS):
+        return 3
+    return 9
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
@@ -1174,32 +1182,31 @@ def demo_macro():
 
 def demo_news():
     headlines = [
-        # Portfolio-relevant (guaranteed slots)
+        # Priority 1: Portfolio-relevant
         ("Gold Hits Fresh Record Above $3,000 on Central Bank Buying Spree", "MarketWatch"),
         ("Netflix Subscriber Growth Beats Estimates, Shares Jump 4%", "CNBC Top News"),
         ("Europe Defense Stocks Surge as NATO Boosts Spending Commitments", "Reuters Business"),
-        # General market headlines
+        # Priority 2: Macro
         ("Fed Officials Signal Patience on Rate Cuts Amid Sticky Inflation Data", "Reuters Business"),
-        ("NVIDIA Surges 3.5% as New AI Chip Orders Exceed Expectations", "CNBC Top News"),
-        ("Bitcoin Tops $87,000 as Institutional ETF Inflows Accelerate", "CNBC Top News"),
-        ("U.S. Manufacturing PMI Surprises to Upside, Signals Recovery", "MarketWatch"),
         ("China Cuts Reserve Requirement Ratio to Boost Slowing Economy", "Reuters Business"),
+        # Priority 3: Market-moving
+        ("NVIDIA Surges 3.5% as New AI Chip Orders Exceed Expectations", "CNBC Top News"),
         ("Goldman Sachs Raises S&P 500 Year-End Target to 6,200", "CNBC Top News"),
         ("Oil Slips Below $69 on Demand Concerns Despite OPEC+ Cuts", "MarketWatch"),
+        ("U.S. Manufacturing PMI Surprises to Upside, Signals Recovery", "MarketWatch"),
+        ("Bitcoin Tops $87,000 as Institutional ETF Inflows Accelerate", "CNBC Top News"),
     ]
     now = datetime.now()
-    items = [
-        {
-            "title": title,
-            "link": "#",
-            "source": source,
+    items = []
+    for i, (title, source) in enumerate(headlines):
+        a = {
+            "title": title, "link": "#", "source": source,
             "published": now - timedelta(hours=i, minutes=random.randint(0, 59)),
             "portfolio_badge": _match_portfolio_tag(title),
         }
-        for i, (title, source) in enumerate(headlines)
-    ]
-    # Sort: portfolio-relevant first, then by date
-    items.sort(key=lambda a: (0 if a["portfolio_badge"] else 1, -(a["published"] or datetime.min).timestamp() if a["published"] else 0))
+        a["priority"] = _headline_priority(a)
+        items.append(a)
+    items.sort(key=lambda a: (a["priority"], -(a["published"] or datetime.min).timestamp() if a["published"] else 0))
     return items
 
 
