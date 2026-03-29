@@ -364,9 +364,17 @@ _EXCLUDE_KEYWORDS = [
     "how to save", "retirement plan", "opinion:", "editorial:", "review:",
     "travel", "celebrity", "entertainment", "horoscope", "wellness",
     "self-care", "dating", "relationship", "diet", "fitness tip",
-    # Real estate
+    # Real estate / personal finance advice
     "real estate", "mortgage rate", "home price", "housing market",
-    "rent ", "landlord", "homebuyer", "down payment", "property tax",
+    "rent ", "landlord", "homebuyer", "down payment", "down-payment",
+    "property tax", "home equity", "refinanc",
+    "your money", "your wallet", "save money", "credit score",
+    "side hustle", "budget", "debt payoff", "financial planner",
+    "the will", "inheritance", "estate plan",
+    # Soft advice / listicles
+    "helping people flourish", "long-term investors are buying",
+    "dream — likely losers", "short seller's dream",
+    "best stocks to buy", "top picks for",
     # Crypto (unless Bitcoin major move — handled in priority logic)
     "altcoin", "memecoin", "dogecoin", "shiba", "solana", "cardano",
     "nft ", "defi ", "airdrop", "token launch",
