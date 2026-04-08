@@ -1,14 +1,18 @@
 """
 signal_engine.py - Trade signal generation and risk management logic.
 
-Pipeline entry point is ``classify_market(df_15m, state)``, which acts as a
-gate: only a "TRENDING" result allows signal logic to proceed.
+Pipeline:
+  evaluate_signal(df_15m, df_1h)
+      └─ compute_indicators()   → state dict
+      └─ classify_market()      → gate ("TRENDING" / "RANGING" / "VOLATILE")
+      └─ long / short criteria  → signal dict or None
 
 Responsibilities:
-- classify_market(): gate function — returns "VOLATILE", "RANGING", or "TRENDING"
-- (forthcoming) evaluate_signal(): long/short entry conditions and risk params
+- classify_market(): gate — returns "VOLATILE", "RANGING", or "TRENDING"
+- evaluate_signal(): runs indicators, gate, then all-or-nothing entry logic
 """
 
+from datetime import datetime, timezone, timedelta
 from typing import Optional
 
 import numpy as np
@@ -16,7 +20,8 @@ import pandas as pd
 from ta.trend import ADXIndicator, EMAIndicator
 from ta.volatility import AverageTrueRange
 
-from config import ATR_PERIOD, EMA_PERIOD
+from config import ATR_MULTIPLIER_SL, ATR_PERIOD, EMA_PERIOD, MAX_TRADE_MINUTES, RR_RATIO, VOLUME_MULTIPLIER
+from indicators import compute_indicators
 
 # ── Thresholds ────────────────────────────────────────────────────────────────
 
@@ -104,3 +109,122 @@ def classify_market(df_15m: pd.DataFrame, state: dict) -> str:
 
     # ── 3. TRENDING ───────────────────────────────────────────────────────────
     return "TRENDING"
+
+
+# ── Signal evaluation ─────────────────────────────────────────────────────────
+
+def evaluate_signal(df_15m: pd.DataFrame, df_1h: pd.DataFrame) -> dict:
+    """
+    Run the full signal pipeline for one candle cycle.
+
+    Steps
+    -----
+    1. Compute all indicators via ``indicators.compute_indicators``.
+    2. Gate on market regime via ``classify_market``; abort if not TRENDING.
+    3. Evaluate all five LONG criteria — all must be True (all-or-nothing).
+    4. Evaluate all five SHORT criteria — all must be True (all-or-nothing).
+    5. If a direction fires, compute entry / stop-loss / take-profit and return
+       a fully populated signal dict.  If neither fires, return a no-signal dict.
+
+    Parameters
+    ----------
+    df_15m : DataFrame of closed 15m candles.
+    df_1h  : DataFrame of closed 1h  candles.
+
+    Returns
+    -------
+    dict
+        Always returns a dict.  Key ``"signal"`` is ``"LONG"``, ``"SHORT"``,
+        or ``None``.
+    """
+    # ── Step 1: indicators ───────────────────────────────────────────────────
+    state = compute_indicators(df_15m, df_1h)
+    # Inject df_1h so classify_market can run the EMA slope check.
+    state["_df_1h"] = df_1h
+
+    # ── Step 2: market regime gate ───────────────────────────────────────────
+    market_condition = classify_market(df_15m, state)
+    if market_condition != "TRENDING":
+        return {
+            "signal": None,
+            "market_condition": market_condition,
+            "reason": "Market not in trending condition — no trade",
+        }
+
+    # Convenience aliases pulled directly from state.
+    above_ema               = state["above_ema"]
+    macd_just_flipped_pos   = state["macd_just_flipped_positive"]
+    macd_just_flipped_neg   = state["macd_just_flipped_negative"]
+    rsi                     = state["rsi"]
+    bb_bounce_long          = state["bb_bounce_long"]
+    bb_bounce_short         = state["bb_bounce_short"]
+    volume_ratio            = state["volume_ratio"]
+    price                   = state["price"]
+    atr                     = state["atr"]
+
+    # ── Step 3: LONG criteria (all five required) ────────────────────────────
+    long_criteria = {
+        "above_ema":                above_ema is True,
+        "macd_just_flipped_positive": macd_just_flipped_pos is True,
+        "rsi_in_range (35–55)":     35 <= rsi <= 55,
+        "bb_bounce_long":           bb_bounce_long is True,
+        "volume_ratio_ok":          volume_ratio >= VOLUME_MULTIPLIER,
+    }
+    long_triggered = all(long_criteria.values())
+
+    # ── Step 4: SHORT criteria (all five required) ───────────────────────────
+    short_criteria = {
+        "above_ema_false":           above_ema is False,
+        "macd_just_flipped_negative": macd_just_flipped_neg is True,
+        "rsi_in_range (45–65)":      45 <= rsi <= 65,
+        "bb_bounce_short":           bb_bounce_short is True,
+        "volume_ratio_ok":           volume_ratio >= VOLUME_MULTIPLIER,
+    }
+    short_triggered = all(short_criteria.values())
+
+    # ── Step 5: build signal dict ────────────────────────────────────────────
+    now = datetime.now(timezone.utc)
+    expiry = now + timedelta(minutes=MAX_TRADE_MINUTES)
+
+    if long_triggered:
+        stop_loss   = price - ATR_MULTIPLIER_SL * atr
+        take_profit = price + (price - stop_loss) * RR_RATIO
+        return {
+            "signal":           "LONG",
+            "market_condition": "TRENDING",
+            "entry":            round(price, 2),
+            "stop_loss":        round(stop_loss, 2),
+            "take_profit":      round(take_profit, 2),
+            "atr":              round(atr, 2),
+            "rsi":              round(rsi, 2),
+            "volume_ratio":     round(volume_ratio, 3),
+            "criteria_met":     [k for k, v in long_criteria.items() if v],
+            "conviction":       "HIGH (5/5)",
+            "timestamp":        now,
+            "expiry":           expiry,
+        }
+
+    if short_triggered:
+        stop_loss   = price + ATR_MULTIPLIER_SL * atr
+        take_profit = price - (stop_loss - price) * RR_RATIO
+        return {
+            "signal":           "SHORT",
+            "market_condition": "TRENDING",
+            "entry":            round(price, 2),
+            "stop_loss":        round(stop_loss, 2),
+            "take_profit":      round(take_profit, 2),
+            "atr":              round(atr, 2),
+            "rsi":              round(rsi, 2),
+            "volume_ratio":     round(volume_ratio, 3),
+            "criteria_met":     [k for k, v in short_criteria.items() if v],
+            "conviction":       "HIGH (5/5)",
+            "timestamp":        now,
+            "expiry":           expiry,
+        }
+
+    # ── No signal ────────────────────────────────────────────────────────────
+    return {
+        "signal":           None,
+        "market_condition": "TRENDING",
+        "reason":           "Criteria not fully met",
+    }
