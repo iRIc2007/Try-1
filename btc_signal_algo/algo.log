@@ -1,0 +1,35 @@
+2026-04-08 19:32:39  INFO      main — ============================================================
+2026-04-08 19:32:39  INFO      main — BTC Signal Algo — starting up
+2026-04-08 19:32:39  INFO      main — ============================================================
+2026-04-08 19:32:39  INFO      main — Fetching historical candles via REST API…
+2026-04-08 19:32:39  ERROR     data_feed — Bootstrap failed: HTTPSConnectionPool(host='api.binance.com', port=443): Max retries exceeded with url: /api/v3/klines?symbol=BTCUSDT&interval=15m&limit=101 (Caused by ProxyError('Unable to connect to proxy', OSError('Tunnel connection failed: 403 Forbidden')))
+2026-04-08 19:32:39  INFO      data_feed — Data feed background thread started.
+2026-04-08 19:32:39  ERROR     data_feed — WebSocket error: failed CONNECT via proxy status: 403
+2026-04-08 19:32:39  ERROR     websocket — failed CONNECT via proxy status: 403 - goodbye
+2026-04-08 19:32:39  WARNING   data_feed — WebSocket closed (status=None): None
+2026-04-08 19:32:39  INFO      data_feed — WebSocket reconnect attempt 1/5 in 1s…
+2026-04-08 19:32:40  ERROR     data_feed — WebSocket error: failed CONNECT via proxy status: 403
+2026-04-08 19:32:40  ERROR     websocket — failed CONNECT via proxy status: 403 - goodbye
+2026-04-08 19:32:40  WARNING   data_feed — WebSocket closed (status=None): None
+2026-04-08 19:32:40  INFO      data_feed — WebSocket reconnect attempt 2/5 in 2s…
+2026-04-08 19:32:41  INFO      main — Bootstrap complete — 15m: 0 rows, 1h: 0 rows.
+2026-04-08 19:32:41  INFO      main — WebSocket listener running in background thread.
+2026-04-08 19:32:41  INFO      main — Scheduler armed — signal checks at :01, :16, :31, :46 past each hour.
+2026-04-08 19:32:42  ERROR     data_feed — WebSocket error: failed CONNECT via proxy status: 403
+2026-04-08 19:32:42  ERROR     websocket — failed CONNECT via proxy status: 403 - goodbye
+2026-04-08 19:32:42  WARNING   data_feed — WebSocket closed (status=None): None
+2026-04-08 19:32:42  INFO      data_feed — WebSocket reconnect attempt 3/5 in 4s…
+2026-04-08 19:32:46  ERROR     data_feed — WebSocket error: failed CONNECT via proxy status: 403
+2026-04-08 19:32:46  ERROR     websocket — failed CONNECT via proxy status: 403 - goodbye
+2026-04-08 19:32:46  WARNING   data_feed — WebSocket closed (status=None): None
+2026-04-08 19:32:46  INFO      data_feed — WebSocket reconnect attempt 4/5 in 8s…
+2026-04-08 19:32:54  ERROR     data_feed — WebSocket error: failed CONNECT via proxy status: 403
+2026-04-08 19:32:54  ERROR     websocket — failed CONNECT via proxy status: 403 - goodbye
+2026-04-08 19:32:54  WARNING   data_feed — WebSocket closed (status=None): None
+2026-04-08 19:32:54  INFO      data_feed — WebSocket reconnect attempt 5/5 in 16s…
+2026-04-08 19:33:10  ERROR     data_feed — WebSocket error: failed CONNECT via proxy status: 403
+2026-04-08 19:33:10  ERROR     websocket — failed CONNECT via proxy status: 403 - goodbye
+2026-04-08 19:33:10  WARNING   data_feed — WebSocket closed (status=None): None
+2026-04-08 19:33:10  CRITICAL  data_feed — WebSocket: max retries (5) reached. Giving up.
+2026-04-08 19:46:01  WARNING   main — [2026-04-08 19:46:01 UTC] Skipping cycle — insufficient data (15m rows: 0, 1h rows: 0, need 60).
+2026-04-08 20:01:01  WARNING   main — [2026-04-08 20:01:01 UTC] Skipping cycle — insufficient data (15m rows: 0, 1h rows: 0, need 60).
